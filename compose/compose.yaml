@@ -25,3 +25,12 @@ services:
       - ./Saved:/pal/Package/Pal/Saved
 
     mem_limit: 20g
+
+    # O servidor loga muito (inclusive todo o trafego HTTP do Sentry). Sem teto,
+    # o json-file cresce ate encher o disco — e disco cheio impede a gravacao do
+    # save, que e justamente o que corrompe o mundo.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
