@@ -4,6 +4,11 @@ Fork do [repositório oficial da Pocketpair](https://github.com/pocketpairjp/pal
 com scripts que mantêm o servidor de pé sozinho: vigiam quedas, aplicam
 atualizações e — principalmente — **recuperam o mundo quando o save corrompe**.
 
+Também lê o `Level.sav` e publica um **dashboard público** com as estatísticas
+do mundo, atualizado sozinho duas vezes por dia:
+
+### 📊 [gierrejunior.github.io/servidor-palworld](https://gierrejunior.github.io/servidor-palworld/)
+
 A imagem Docker continua sendo a oficial (`ghcr.io/pocketpairjp/palserver`).
 O que este repositório acrescenta é a camada de operação em volta dela.
 
@@ -121,6 +126,9 @@ Depois de o servidor gerar o `Saved/` na primeira execução, ative a REST API n
 ./init.sh --force      # ciclo completo agora, sem esperar jogadores
 ./init.sh --stop       # desliga com segurança (use antes de reiniciar a máquina)
 ./recover.sh           # plano B: destrava um init.sh preso e força o ciclo
+./status.sh            # quem está online, saúde do container, save e disco
+./pal-stats.sh         # estatísticas do mundo lidas do Level.sav
+./publish-stats.sh     # regenera o dashboard e publica se algo mudou
 ```
 
 O `recover.sh` existe para quando o automático não resolve — por exemplo, um
@@ -146,8 +154,11 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # No boot da máquina (espera o Docker subir antes de checar).
 @reboot sleep 60; /caminho/servidor-palworld/compose/init.sh --watchdog >> /caminho/servidor-palworld/compose/init.log 2>&1
 
-# Atualização diária às 5:00 — espera o servidor esvaziar antes de reiniciar.
+# Reinício diário às 5:00 (limpeza de memória), aplicando update se houver.
 0 5 * * * /caminho/servidor-palworld/compose/init.sh >> /caminho/servidor-palworld/compose/init.log 2>&1
+
+# Dashboard: duas vezes por dia, publica se os números mudaram.
+0 8,20 * * * /caminho/servidor-palworld/compose/publish-stats.sh >> /caminho/servidor-palworld/compose/stats.log 2>&1
 ```
 
 Separar as duas coisas é proposital: o watchdog roda o tempo todo e **nunca**
@@ -179,6 +190,70 @@ sudo systemctl enable --now palworld-graceful-stop.service
 ```
 
 Ajuste `User=` e o caminho do `ExecStop=` dentro do arquivo antes de instalar.
+
+## Dashboard de estatísticas
+
+O `pal-stats.sh` lê o `Level.sav` e extrai jogadores, pals, IVs, raridades e
+datas de captura. No terminal:
+
+```bash
+./pal-stats.sh          # relatório colorido
+./pal-stats.sh --json   # mesmos dados em JSON
+```
+
+O `publish-stats.sh` gera o dashboard e publica no GitHub Pages, **comitando só
+quando os números mudam** — o carimbo de hora sozinho não justifica um commit.
+
+### O obstáculo: Palworld v1.0 mudou o formato do save
+
+A partir da v0.6, incluindo a v1.0, os saves passaram a ser comprimidos com
+**Oodle** (magic `PlM`) em vez de zlib (`PlZ`). O
+[palworld-save-tools](https://github.com/cheahjs/palworld-save-tools), principal
+ferramenta da comunidade, está parado desde outubro de 2024 e só entende `PlZ` —
+ele falha com `not a compressed Palworld save, found b'PlM' instead of b'PlZ'`.
+
+A imagem em `palstats/` resolve isso compilando o
+[ooz](https://github.com/powzix/ooz), reimplementação aberta do decodificador
+Oodle, e ligando os dois por `ctypes`. O repositório do ooz é Windows-only, então
+o `Dockerfile` troca o `stdafx.h` por equivalentes do GCC e corta o trecho final
+do `kraken.cpp`, que carrega a DLL oficial da Oodle.
+
+Foram necessários mais dois ajustes para a v1.0:
+
+| Sintoma | Causa | Solução |
+|---|---|---|
+| `Warning: EOF not reached` | Personagens ganharam bytes no fim | Ler as propriedades e ignorar o resto |
+| `Unknown type: SetProperty` | Tipo novo, desconhecido pela lib | Consumir os bytes e descartar |
+
+Só o decodificador de personagens é registrado. Construções, vegetação e
+containers ficam como bytes crus: evita outras incompatibilidades da v1.0 e
+derruba a leitura de 32 MB para **menos de 3 segundos**.
+
+> **Guildas ainda não funcionam.** A estrutura mudou mais do que os outros
+> campos — o `base_ids` parece ter sumido e o restante não alinha. As 3 bases
+> são lidas corretamente, mas nome da guilda e lista de membros, não.
+
+### Isolamento
+
+A análise nunca toca o save real:
+
+- roda em container descartável, com `--network none`
+- opera sobre uma **cópia** do `Level.sav`, montada como somente-leitura
+- nada é instalado na máquina hospedeira
+
+O JSON publicado leva apenas apelidos do jogo. Identificadores internos, Steam ID
+e IP ficam de fora — só aparece o que já é visível para quem entra no servidor.
+Ainda assim, avise seus jogadores antes de tornar a página pública.
+
+### O que o dashboard mostra
+
+Ranking, troféus calculados na hora (Colecionador, Caçador de Alphas, Coruja,
+Maratonista…), capturas por dia empilhadas por jogador, atividade por hora,
+corrida da coleção, espécies exclusivas, hall de IVs e um explorador com busca,
+filtros e rolagem infinita sobre todos os pals.
+
+**Tempo de jogo não existe no save** — o Palworld não registra. O que dá para
+reconstruir é a atividade a partir do horário de captura de cada pal.
 
 ## Como saber se está funcionando
 
