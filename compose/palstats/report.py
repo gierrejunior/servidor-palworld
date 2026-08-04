@@ -200,8 +200,12 @@ if "--json" in sys.argv:
             ),
         }
 
-    capturas_validas = [p["capturado"] for p in pals if p["capturado"]]
-    linha_tempo = collections.Counter(c.date().isoformat() for c in capturas_validas)
+    # Capturas por dia divididas por jogador, para o grafico empilhado.
+    por_dia_jogador = collections.defaultdict(collections.Counter)
+    for p in pals:
+        if p["capturado"]:
+            por_dia_jogador[p["capturado"].date().isoformat()][dono_de(p) or "selvagem"] += 1
+    linha_tempo = [{"d": dia, "j": dict(c)} for dia, c in sorted(por_dia_jogador.items())]
 
     saida = {
         "gerado_em": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -231,7 +235,7 @@ if "--json" in sys.argv:
             for p in sorted(pals, key=lambda p: -sum(p["ivs"]))[:10]
         ],
         "passivas": collections.Counter(s for p in pals for s in p["passivas"]).most_common(10),
-        "linha_tempo": sorted(linha_tempo.items()),
+        "linha_tempo": linha_tempo,
         "lucky_especies": sorted(set(p["especie"].replace("BOSS_", "") for p in pals if p["lucky"])),
         # Lista completa para o dashboard filtrar/ordenar no navegador. Chaves
         # curtas porque sao ~900 registros embutidos na pagina.

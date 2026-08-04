@@ -57,13 +57,35 @@ for i, j in enumerate(jogadores, 1):
     </tr>"""
     )
 
-tempo = dados["linha_tempo"]
-max_cap = max((n for _, n in tempo), default=1)
-barras_tempo = "".join(
-    f'<div class="dia" title="{d}: {n} capturas">'
-    f'<i style="height:{barra(n, max_cap)}%"></i>'
-    f'<span>{date.fromisoformat(d).strftime("%d/%m")}</span></div>'
-    for d, n in tempo[-30:]
+# Uma cor por jogador, na ordem do ranking; sobra o cinza para pals selvagens.
+PALETA = ["#4ea1ff", "#ffc857", "#ff7ab8", "#5ddba0", "#b18cff", "#ff9d5c", "#4dd4d4"]
+cor_de = {j["nome"]: PALETA[i % len(PALETA)] for i, j in enumerate(jogadores)}
+cor_de["selvagem"] = "#6b7684"
+
+tempo = dados["linha_tempo"][-30:]
+max_cap = max((sum(d["j"].values()) for d in tempo), default=1)
+
+colunas = []
+for d in tempo:
+    total = sum(d["j"].values())
+    # Maior primeiro: a base da pilha fica visualmente estavel entre os dias.
+    partes = sorted(d["j"].items(), key=lambda kv: -kv[1])
+    segmentos = "".join(
+        f'<i style="height:{barra(n, max_cap)}%;background:{cor_de.get(nome, "#6b7684")}"></i>'
+        for nome, n in partes
+    )
+    detalhe = " · ".join(f"{E(nome)}: {n}" for nome, n in partes)
+    colunas.append(
+        f'<div class="dia" title="{date.fromisoformat(d["d"]):%d/%m} — {total} capturas ({detalhe})">'
+        f'<div class="pilha">{segmentos}</div>'
+        f'<span>{date.fromisoformat(d["d"]):%d/%m}</span></div>'
+    )
+barras_tempo = "".join(colunas)
+
+legenda = "".join(
+    f'<span class="leg"><i style="background:{c}"></i>{E(n)}</span>'
+    for n, c in cor_de.items()
+    if any(n in d["j"] for d in tempo)
 )
 
 max_esp = dados["especies_comuns"][0][1] if dados["especies_comuns"] else 1
@@ -131,10 +153,16 @@ HTML = f"""<!doctype html>
   .tempo {{ display:flex; align-items:flex-end; gap:3px; height:170px; }}
   .dia {{ flex:1; display:flex; flex-direction:column; justify-content:flex-end;
     align-items:center; gap:6px; height:100%; min-width:0; }}
-  .dia i {{ width:100%; background:linear-gradient(180deg,var(--ac),#2b6cb0);
-    border-radius:3px 3px 0 0; min-height:2px; }}
+  .pilha {{ width:100%; display:flex; flex-direction:column-reverse;
+    justify-content:flex-start; flex:1; min-height:0; }}
+  .pilha i {{ width:100%; min-height:2px; display:block; }}
+  .pilha i:last-child {{ border-radius:3px 3px 0 0; }}
   .dia span {{ font-size:.6rem; color:var(--dim); white-space:nowrap;
     transform:rotate(-45deg); }}
+  .legenda {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px;
+    font-size:.82rem; color:var(--dim); }}
+  .leg {{ display:inline-flex; align-items:center; gap:6px; }}
+  .leg i {{ width:11px; height:11px; border-radius:3px; display:inline-block; }}
   .linha {{ display:grid; grid-template-columns:150px 1fr 40px; gap:10px;
     align-items:center; margin-bottom:7px; }}
   .rot {{ font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
@@ -191,8 +219,11 @@ HTML = f"""<!doctype html>
     </table>
   </div>
 
-  <h2>Capturas por dia</h2>
-  <div class="card"><div class="tempo">{barras_tempo}</div></div>
+  <h2>Capturas por dia <span class="dim">— por jogador</span></h2>
+  <div class="card">
+    <div class="tempo">{barras_tempo}</div>
+    <div class="legenda">{legenda}</div>
+  </div>
 
   <div class="dois">
     <div>
