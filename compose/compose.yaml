@@ -1,13 +1,18 @@
 services:
   palworld-server:
-    # https://github.com/pocketpairjp/palworld-dedicated-server-docker/pkgs/container/palserver
-    image: ghcr.io/pocketpairjp/palserver:v1.0.1.100619
-
+    container_name: palworld-server
+    image: ghcr.io/pocketpairjp/palserver:v1.0.2.101103
     entrypoint: /pal/helper.sh
+    restart: unless-stopped
 
-    # https://tech.palworldgame.com/settings-and-operation/arguments
+    # O servidor ignora SIGTERM, então este prazo é só a rede de segurança para
+    # quando o init.sh não conseguir desligar pela REST API. O caminho normal
+    # salva e encerra pela API antes de chegar aqui.
+    stop_grace_period: 30s
+
     command:
       - -port=8211
+      - -publiclobby
       - -useperfthreads
       - -NoAsyncLoadingThread
       - -UseMultithreadForDS
@@ -18,3 +23,5 @@ services:
     volumes:
       - ./helper.sh:/pal/helper.sh:ro
       - ./Saved:/pal/Package/Pal/Saved
+
+    mem_limit: 20g
