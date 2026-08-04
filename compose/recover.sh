@@ -9,12 +9,12 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCK_FILE="/tmp/palworld-init.lock"
+PID_FILE="/tmp/palworld-init.pid"
 
 log() { printf '%s [recover] %s\n' "$(date '+%F %T')" "$*"; }
 
-if [ -s "$LOCK_FILE" ]; then
-  pid="$(head -1 "$LOCK_FILE" | tr -dc '0-9')"
+if [ -s "$PID_FILE" ]; then
+  pid="$(head -1 "$PID_FILE" | tr -dc '0-9')"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     log "init.sh preso no PID $pid (provavelmente esperando jogadores) — encerrando."
     kill -TERM "$pid" 2>/dev/null || true

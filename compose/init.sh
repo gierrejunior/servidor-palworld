@@ -30,6 +30,7 @@ MAINT_DEADLINE=21600
 COUNTDOWN_LEAD=600
 
 LOCK_FILE="/tmp/palworld-init.lock"
+PID_FILE="/tmp/palworld-init.pid"
 LOG_FILE="$COMPOSE_DIR/init.log"
 LOG_MAX_BYTES=5242880
 
@@ -54,13 +55,38 @@ err()  { printf '%s [erro] %s\n'  "$(date '+%F %T')" "$*" >&2; }
 
 # Impede que uma execução atropele outra — o ciclo diário pode ficar horas
 # esperando jogadores saírem, e o watchdog roda a cada 5 min nesse meio-tempo.
-exec 9>"$LOCK_FILE"
+# Abre com <> para não truncar o PID de quem já detém o lock.
+exec 9<>"$LOCK_FILE"
 if ! flock -n 9; then
-  [ "$MODE" = "watchdog" ] && exit 0
-  err "Outra execução do init.sh está em andamento; abortando."
-  exit 1
+  case "$MODE" in
+    watchdog)
+      # Silêncio total aqui já dificultou um diagnóstico: sem esta linha,
+      # um watchdog que não fez nada é indistinguível de um que não rodou.
+      log "Ciclo em andamento (PID $(head -1 "$PID_FILE" 2>/dev/null || echo '?')) — watchdog dispensado."
+      exit 0
+      ;;
+    stop)
+      # O desligamento da máquina não pode esperar o ciclo diário terminar:
+      # sem isso o servidor levaria SIGKILL, que é o que corrompe o save.
+      holder="$(head -1 "$PID_FILE" 2>/dev/null | tr -dc '0-9')"
+      if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+        warn "Ciclo em andamento (PID $holder) — encerrando para desligar com segurança."
+        kill -TERM "$holder" 2>/dev/null || true
+        for _ in $(seq 1 5); do
+          kill -0 "$holder" 2>/dev/null || break
+          sleep 1
+        done
+        kill -KILL "$holder" 2>/dev/null || true
+      fi
+      flock -w 15 9 || warn "Seguindo sem o lock; o desligamento tem prioridade."
+      ;;
+    *)
+      err "Outra execução do init.sh está em andamento; abortando."
+      exit 1
+      ;;
+  esac
 fi
-printf '%s\n' "$$" >&9
+printf '%s\n' "$$" >"$PID_FILE"
 
 # O watchdog roda a cada 5 min; sem isso o init.log cresce para sempre.
 # Trunca no lugar para não invalidar o descritor que o cron mantém aberto.
@@ -242,7 +268,11 @@ graceful_stop() {
 
   # Se a contagem regressiva já rodou, avisar de novo seria redundante.
   if [ "$ANNOUNCED" -eq 0 ] && n="$(players_online)" && [ "$n" -gt 0 ]; then
-    announce "[MANUTENCAO] O servidor reinicia em 30 segundos para manutencao."
+    if [ "$MODE" = "stop" ]; then
+      announce "[MANUTENCAO] O servidor sera DESLIGADO em 30 segundos - manutencao na maquina, sem previsao de volta imediata. Procure um lugar seguro e desconecte agora. Aviso no Discord quando voltar."
+    else
+      announce "[MANUTENCAO] O servidor reinicia em 30 segundos para manutencao. Voce podera reconectar em cerca de 1 minuto."
+    fi
     sleep 30
   fi
 
