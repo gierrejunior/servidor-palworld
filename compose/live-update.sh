@@ -11,6 +11,9 @@ set -euo pipefail
 COMPOSE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SAVED_DIR="$COMPOSE_DIR/Saved"
 ESTADO="$COMPOSE_DIR/live-state.json"
+# Mapa apelido -> steam id, necessario para moderar quem esta offline.
+# Fica so na maquina: nunca vai para o Gist nem para o repositorio.
+IDENTIDADES="$COMPOSE_DIR/jogadores.json"
 GIST_ID_FILE="$COMPOSE_DIR/gist-id"
 CONTAINER="palworld-server"
 API_PORT=8212
@@ -53,6 +56,16 @@ jq -n \
   $anterior + ([$players.players[]? | {(.name): $agora}] | add // {})
 ' > "$tmp/estado.json"
 mv "$tmp/estado.json" "$ESTADO"
+
+[ -f "$IDENTIDADES" ] || echo '{}' > "$IDENTIDADES"
+jq -n \
+  --argjson anterior "$(cat "$IDENTIDADES")" \
+  --argjson players "$players" \
+  --arg agora "$agora" '
+  $anterior + ([$players.players[]? |
+    {(.name): {userid: .userId, playerId: .playerId, visto: $agora}}] | add // {})
+' > "$tmp/ids.json"
+mv "$tmp/ids.json" "$IDENTIDADES"
 
 # Apenas apelido, nivel e ping. IP e Steam ID ficam de fora de proposito.
 jq -n \

@@ -4,3 +4,6 @@ init.log
 stats.log
 live-state.json
 live.log
+jogadores.json
+suspensoes.json
+moderar.log
