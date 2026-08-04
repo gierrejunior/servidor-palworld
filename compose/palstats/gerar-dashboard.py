@@ -8,6 +8,7 @@ import html
 import json
 import sys
 from datetime import date, datetime
+from urllib.parse import quote
 
 dados = json.load(open(sys.argv[1], encoding="utf-8"))
 destino = sys.argv[2]
@@ -108,12 +109,31 @@ DADOS_JS = json.dumps(
 )
 CORES_JS = json.dumps(cor_de, ensure_ascii=False)
 
+# Favicon como data URI: mantem a pagina autossuficiente, sem arquivo extra.
+# O quote() e obrigatorio porque "#" das cores abriria um fragmento na URL.
+_FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
+    "<circle cx='16' cy='16' r='15' fill='#eef2f6'/>"
+    "<path d='M1 16a15 15 0 0 1 30 0z' fill='#4ea1ff'/>"
+    "<rect x='1' y='13.6' width='30' height='4.8' fill='#12161b'/>"
+    "<circle cx='16' cy='16' r='5.6' fill='#eef2f6' stroke='#12161b' stroke-width='2.6'/>"
+    "</svg>"
+)
+FAVICON = "data:image/svg+xml," + quote(_FAVICON_SVG)
+
 HTML = f"""<!doctype html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SonicCurupiraBeer — estatísticas</title>
+<link rel="icon" href="{FAVICON}">
+<link rel="apple-touch-icon" href="{FAVICON}">
+<meta name="theme-color" content="#0f1216">
+<meta name="description" content="Estatísticas do servidor Palworld SonicCurupiraBeer: ranking, coleções, troféus e capturas.">
+<meta property="og:title" content="SonicCurupiraBeer — estatísticas">
+<meta property="og:description" content="Ranking, troféus e a coleção de pals de cada jogador.">
+<meta property="og:type" content="website">
 <style>
   :root {{
     --bg:#0f1216; --card:#171c22; --line:#232b34; --tx:#e6edf3; --dim:#8b98a5;
