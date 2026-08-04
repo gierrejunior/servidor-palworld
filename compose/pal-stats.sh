@@ -28,4 +28,7 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cp "$SAVE" "$tmp/Level.sav"
 
-docker run --rm --network none -v "$tmp:/work:ro" "$IMAGE" "$@" 2>/dev/null
+# Sem o TZ o container roda em UTC e o relatorio sai com a hora errada.
+TZ_HOST="$(cat /etc/timezone 2>/dev/null || readlink -f /etc/localtime | sed 's|.*/zoneinfo/||')"
+
+docker run --rm --network none -e "TZ=${TZ_HOST:-UTC}" -v "$tmp:/work:ro" "$IMAGE" "$@" 2>/dev/null
