@@ -249,6 +249,9 @@ if "--json" in sys.argv:
                 "iv": p["ivs"],
                 "d": dono_de(p) or "",
                 "c": p["capturado"].date().isoformat() if p["capturado"] else "",
+                # Hora da captura: o OwnedTime guarda o horario completo, o que
+                # permite montar o perfil de atividade ao longo do dia.
+                "h": p["capturado"].hour if p["capturado"] else -1,
                 "f": p["amizade"],
             }
             for p in sorted(pals, key=lambda p: -sum(p["ivs"]))
