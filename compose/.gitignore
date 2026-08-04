@@ -2,3 +2,5 @@ Saved/*
 !Saved/.gitkeep
 init.log
 stats.log
+live-state.json
+live.log

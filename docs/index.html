@@ -107,6 +107,26 @@
     font:inherit; font-size:.85rem; }
   .voltar:hover { border-color:var(--ac); color:var(--ac); }
 
+  /* faixa ao vivo */
+  .live { display:none; background:var(--card); border:1px solid var(--line);
+    border-radius:12px; padding:12px 16px; margin-bottom:20px;
+    align-items:center; gap:14px; flex-wrap:wrap; }
+  .live.on { display:flex; }
+  .live .bolha { width:9px; height:9px; border-radius:99px; flex:none; }
+  .live .bolha.verde { background:#3fb950; box-shadow:0 0 0 0 rgba(63,185,80,.7);
+    animation:pulso 2.4s infinite; }
+  .live .bolha.cinza { background:var(--dim); }
+  .live .bolha.vermelha { background:#f85149; }
+  @keyframes pulso { 70% { box-shadow:0 0 0 9px rgba(63,185,80,0); }
+    100% { box-shadow:0 0 0 0 rgba(63,185,80,0); } }
+  @media (prefers-reduced-motion:reduce) { .live .bolha.verde { animation:none; } }
+  .live .quem { display:flex; gap:8px; flex-wrap:wrap; }
+  .live .jog { background:var(--bg); border-radius:99px; padding:4px 11px;
+    font-size:.85rem; cursor:pointer; border:1px solid var(--line); }
+  .live .jog:hover { border-color:var(--ac); }
+  .live .quando { margin-left:auto; color:var(--dim); font-size:.78rem; }
+  .ponto-on { color:#3fb950; }
+
   /* trofeus */
   .trofeus { display:grid; gap:10px;
     grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); }
@@ -140,6 +160,8 @@
 <div class="wrap">
   <h1>SonicCurupiraBeer</h1>
   <div class="sub">Estatísticas do mundo · atualizado em 04/08/2026 às 16:59</div>
+
+  <div id="live" class="live" aria-live="polite"></div>
 
   <div class="stats"><div class="stat"><span class="num">5</span><span class="lbl">jogadores</span></div><div class="stat"><span class="num">919</span><span class="lbl">pals</span></div><div class="stat"><span class="num">252</span><span class="lbl">espécies</span></div><div class="stat"><span class="num">132</span><span class="lbl">alphas</span></div><div class="stat"><span class="num">11</span><span class="lbl">lucky</span></div><div class="stat"><span class="num">10</span><span class="lbl">rank 4+</span></div></div>
 
@@ -564,9 +586,15 @@ function abrir(nome) {
   const especies = new Set(meus.map(p => p.e)).size;
   const r4 = meus.filter(p => p.r >= 4).length;
 
+  const online = VIVO && (VIVO.online || []).some(o => o.n === nome);
+  const visto = VIVO && VIVO.visto && VIVO.visto[nome];
+  const presenca = online
+    ? '<span class="ponto-on">● online agora</span>'
+    : visto ? `<span class="dim">visto ${haQuanto(visto)}</span>` : '';
+
   $('painel').innerHTML = `
     <button class="voltar" aria-label="Voltar para a visão geral">← Voltar</button>
-    <h3>${esc(j.nome)}</h3>
+    <h3>${esc(j.nome)} <span style="font-size:.8rem;font-weight:400">${presenca}</span></h3>
     <div class="grade">
       <div class="g"><b>${j.nivel}</b><span class="dim">nível</span></div>
       <div class="g"><b>${j.pals}</b><span class="dim">pals</span></div>
@@ -610,6 +638,81 @@ $('ranking').addEventListener('keydown', e => {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && $('painel').classList.contains('on')) voltar();
 });
+
+// ---- estado ao vivo ----
+// Vem de um Gist, nao do repositorio: commit a cada minuto estouraria o limite
+// de 10 builds/hora do Pages. Usamos a API em vez da URL raw porque o CDN do
+// raw segura o conteudo por 5 minutos e ignora cache-buster. A API tem teto de
+// 60 requisicoes/hora por IP, dai o intervalo de 90s - e o proprio cache dela
+// e de 60s, entao consultar mais rapido nao adiantaria nada.
+const GIST = 'd2fd58dcb63560f94254d06660491fdf';
+let VIVO = null;
+
+const haQuanto = iso => {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (s < 90) return 'agora mesmo';
+  if (s < 5400) return `há ${Math.round(s / 60)} min`;
+  if (s < 172800) return `há ${Math.round(s / 3600)} h`;
+  return `há ${Math.round(s / 86400)} dias`;
+};
+
+function pintarVivo() {
+  const el = $('live');
+  if (!VIVO) return;
+  el.classList.add('on');
+
+  const online = VIVO.online || [];
+  let bolha, texto;
+  if (!VIVO.no_ar) {
+    bolha = 'vermelha'; texto = '<b>Servidor fora do ar</b>';
+  } else if (online.length === 0) {
+    bolha = 'cinza'; texto = '<b>Ninguém online</b>';
+  } else {
+    bolha = 'verde';
+    texto = `<b>${online.length} online agora</b>`;
+  }
+
+  el.innerHTML = `<span class="bolha ${bolha}"></span>${texto}
+    <span class="quem">${online.map(o =>
+      `<span class="jog" data-jogador="${esc(o.n)}">${esc(o.n)}
+        <span class="dim">nv ${o.nv} · ${o.p}ms</span></span>`).join('')}</span>
+    <span class="quando">atualizado ${haQuanto(VIVO.ts)}</span>`;
+
+  el.querySelectorAll('.jog').forEach(j =>
+    j.onclick = () => abrir(j.dataset.jogador));
+
+  // Marca quem esta online no ranking.
+  const nomes = new Set(online.map(o => o.n));
+  document.querySelectorAll('#ranking tr[data-jogador]').forEach(tr => {
+    const td = tr.querySelector('.nome');
+    const ja = td.querySelector('.ponto-on');
+    if (nomes.has(tr.dataset.jogador)) {
+      if (!ja) td.insertAdjacentHTML('afterbegin', '<span class="ponto-on" title="online agora">● </span>');
+    } else if (ja) ja.remove();
+  });
+}
+
+async function buscarVivo() {
+  if (!GIST) return;
+  try {
+    const r = await fetch(`https://api.github.com/gists/${GIST}`, {
+      headers: { 'Accept': 'application/vnd.github+json' }
+    });
+    if (!r.ok) return;                       // 403 = teto de requisicoes; mantem o ultimo
+    const g = await r.json();
+    const arq = g.files && g.files['live.json'];
+    if (arq && arq.content) { VIVO = JSON.parse(arq.content); pintarVivo(); }
+  } catch (e) { /* offline ou bloqueado: a pagina segue util sem isso */ }
+}
+
+if (GIST) {
+  buscarVivo();
+  setInterval(buscarVivo, 90000);
+  // Reconsulta ao voltar para a aba, mas so se ja passou do intervalo.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && VIVO && Date.now() - Date.parse(VIVO.ts) > 90000) buscarVivo();
+  });
+}
 </script>
 </body>
 </html>

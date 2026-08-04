@@ -38,7 +38,8 @@ fi
 
 log "dados mudaram; gerando dashboard..."
 cp "$tmp/dados.json" "$DOCS/dados.json"
-python3 "$COMPOSE_DIR/palstats/gerar-dashboard.py" "$DOCS/dados.json" "$DOCS/index.html" >/dev/null
+python3 "$COMPOSE_DIR/palstats/gerar-dashboard.py" "$DOCS/dados.json" "$DOCS/index.html" \
+  "$(cat "$COMPOSE_DIR/gist-id" 2>/dev/null || true)" >/dev/null
 
 cd "$REPO_DIR"
 if git diff --quiet -- docs/; then
