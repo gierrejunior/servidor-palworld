@@ -58,18 +58,38 @@ Em camadas, da mais barata para a mais drástica:
 Nada em `Saved/` é apagado: o save quebrado vai para `Saved/corrupted-save-<data>/`
 em vez de ser sobrescrito. A limpeza automática mexe **só** em imagens Docker.
 
-### Atualização
+### Reinício diário e atualização
 
-Consulta as tags no GHCR, compara com a do `compose.yaml` e, havendo versão nova:
+O servidor dedicado acumula memória ao longo do dia, então o ciclo diário
+reinicia **sempre**, tenha ou não versão nova. Havendo atualização, ela é
+aplicada na mesma parada — uma interrupção por dia, não duas.
 
-- **espera o servidor esvaziar** (consulta `/v1/api/players` a cada 5 min);
-- baixa a imagem **antes** de parar o container — assim o download não conta como
-  tempo fora do ar, e a imagem em uso fica protegida da limpeza de espaço;
-- atualiza o `compose.yaml`, sobe e só então remove a imagem antiga
-  (cada versão do palserver ocupa ~13 GB);
-- se o download falhar por falta de espaço, remove imagens que nenhum container
-  usa e tenta de novo, até 3 vezes. Se nada der certo, **permanece na versão
-  atual** em vez de deixar o servidor sem imagem.
+Com o servidor **vazio**, reinicia na hora: são ~7 segundos fora do ar e não há
+a quem avisar.
+
+Com **gente online**, o reinício é adiado. A cada 5 min ele checa de novo e
+reinicia assim que o último jogador sair. Existe um prazo (6 h por padrão): se
+esgotar, avisa no chat e reinicia mesmo assim.
+
+A contagem regressiva só aparece quando o reinício vai acontecer com gente
+conectada:
+
+| Momento | Mensagem no chat |
+|---|---|
+| 10 min antes | Explica que é rotina diária de limpeza de memória |
+| 5 min antes | Pede para procurar lugar seguro |
+| 4, 3, 2, 1 min | Aviso curto |
+| Último minuto | A cada 5 segundos |
+| Na hora | "Reiniciando o servidor agora" |
+
+Na atualização, a imagem é baixada **antes** de o container parar — o download
+não conta como tempo fora do ar, e a imagem em uso fica protegida da limpeza de
+espaço. Só depois de o servidor voltar e ser confirmado nos logs é que a imagem
+antiga é removida (cada versão do palserver ocupa ~13 GB).
+
+Se o download falhar por falta de espaço, o script remove imagens que nenhum
+container usa e tenta de novo, até 3 vezes. Não dando certo, **permanece na
+versão atual** — mas o reinício de limpeza acontece do mesmo jeito.
 
 ## Requisitos
 
@@ -96,9 +116,10 @@ Depois de o servidor gerar o `Saved/` na primeira execução, ative a REST API n
 ### Os dois scripts
 
 ```bash
-./init.sh --watchdog   # levanta o servidor se caiu; nunca atualiza
-./init.sh              # ciclo diário: checa versão nova, espera esvaziar, atualiza
+./init.sh --watchdog   # levanta o servidor se caiu; nunca atualiza nem reinicia
+./init.sh              # ciclo diário: reinicia (e atualiza, se houver versão nova)
 ./init.sh --force      # ciclo completo agora, sem esperar jogadores
+./init.sh --stop       # desliga com segurança (use antes de reiniciar a máquina)
 ./recover.sh           # plano B: destrava um init.sh preso e força o ciclo
 ```
 
@@ -134,6 +155,30 @@ atualiza, então uma versão nova não derruba ninguém no meio da tarde. A
 atualização acontece só no horário escolhido.
 
 O `init.log` se auto-limita em 5 MB.
+
+## Desligar ou reiniciar a máquina
+
+Este é o ponto mais fácil de errar. Desligar a máquina manda SIGTERM ao
+container; o servidor **ignora** e leva SIGKILL — o mesmo caminho que corrompe o
+save. Então, antes de reiniciar:
+
+```bash
+./init.sh --stop
+```
+
+Ele salva pela API, encerra o servidor limpo e remove o container. No próximo
+boot, o `restart: unless-stopped` e o `@reboot` do cron trazem tudo de volta.
+
+Para não depender de lembrar disso, há uma unit que faz o desligamento seguro
+automaticamente no shutdown:
+
+```bash
+sudo cp compose/systemd/palworld-graceful-stop.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now palworld-graceful-stop.service
+```
+
+Ajuste `User=` e o caminho do `ExecStop=` dentro do arquivo antes de instalar.
 
 ## Como saber se está funcionando
 
@@ -189,7 +234,11 @@ docker run --rm -v "$PWD/Saved:/data" alpine sh -c '
 - Se a REST API não responder, o script segue com a manutenção em vez de esperar
   para sempre — o que pode desconectar quem estiver online.
 - A espera por jogadores tem teto de 6 h; passado isso, ele reinicia mesmo com
-  gente conectada.
+  gente conectada (com a contagem regressiva no chat).
+- O reinício diário **não** é uma janela fixa: com gente online ele pode
+  acontecer horas depois do horário agendado.
+- Não há backup fora da máquina. Os snapshots e os backups do jogo moram no
+  mesmo disco — um problema de hardware leva tudo junto.
 - Testado em Linux. Docker Desktop no Windows/macOS não é recomendado para
   servidor dedicado (leitura/escrita em disco limitadas).
 

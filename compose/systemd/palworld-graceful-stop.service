@@ -1,0 +1,29 @@
+; Desliga o servidor Palworld pela REST API antes de a maquina parar o Docker.
+;
+; Sem isso, o shutdown manda SIGTERM ao container; o servidor dedicado ignora
+; SIGTERM e acaba levando SIGKILL, que e o que corrompe o Level.sav.
+;
+; Instalacao (ajuste User= e o caminho do ExecStop para o seu ambiente):
+;
+;   sudo cp compose/systemd/palworld-graceful-stop.service /etc/systemd/system/
+;   sudo systemctl daemon-reload
+;   sudo systemctl enable --now palworld-graceful-stop.service
+;
+; Verificacao: `systemctl status palworld-graceful-stop` deve aparecer como
+; "active (exited)". O trabalho de verdade acontece no ExecStop, no desligamento.
+
+[Unit]
+Description=Desligamento seguro do servidor Palworld
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=gr-dev
+ExecStart=/bin/true
+ExecStop=/home/gr-dev/servidor-palworld/compose/init.sh --stop
+TimeoutStopSec=300
+
+[Install]
+WantedBy=multi-user.target

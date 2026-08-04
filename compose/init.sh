@@ -21,9 +21,13 @@ API_PORT=8212
 PULL_ATTEMPTS=3
 MAX_RESTORE_ATTEMPTS=5
 STARTUP_TIMEOUT=180
-PLAYER_POLL_INTERVAL=300
-PLAYER_WAIT_MAX=21600
 KEEP_SNAPSHOTS=10
+
+# Rodando às 5:00, o prazo de 6h leva o reinício forçado às 11:00; a contagem
+# regressiva começa 10 min antes disso.
+PLAYER_POLL_INTERVAL=300
+MAINT_DEADLINE=21600
+COUNTDOWN_LEAD=600
 
 LOCK_FILE="/tmp/palworld-init.lock"
 LOG_FILE="$COMPOSE_DIR/init.log"
@@ -35,12 +39,14 @@ MODE="daily"
 case "${1:-}" in
   --watchdog) MODE="watchdog" ;;
   --force)    MODE="force" ;;
+  --stop)     MODE="stop" ;;
   "")         ;;
-  *) printf 'uso: %s [--watchdog|--force]\n' "$0" >&2; exit 2 ;;
+  *) printf 'uso: %s [--watchdog|--force|--stop]\n' "$0" >&2; exit 2 ;;
 esac
 
 UPDATE_TAG=""
 ADMIN_PW=""
+ANNOUNCED=0
 
 log()  { printf '%s [%s] %s\n'  "$(date '+%F %T')" "$MODE" "$*"; }
 warn() { printf '%s [aviso] %s\n' "$(date '+%F %T')" "$*"; }
@@ -151,10 +157,54 @@ players_online() {
   jq -er '.players | length' <<<"$body" 2>/dev/null || return 1
 }
 
-# Espera o servidor esvaziar antes de derrubar. Se a API não responder, segue —
-# ficar preso para sempre seria pior do que desconectar alguém às 5h.
-wait_for_empty() {
-  local waited=0 n
+announce() {
+  api_post /v1/api/announce "{\"message\":\"$1\"}" >/dev/null 2>&1 || true
+}
+
+# Sem acentos: o chat do jogo não os renderiza de forma confiável.
+maint_headline() {
+  if [ -n "$UPDATE_TAG" ]; then
+    printf 'O servidor sera atualizado (%s) e reiniciado' "$UPDATE_TAG"
+  else
+    printf 'Reinicio diario de manutencao'
+  fi
+}
+
+# 10 minutos de contagem: 10 e 5 min, depois minuto a minuto, e no ultimo
+# minuto de 5 em 5 segundos.
+countdown_restart() {
+  local m s
+  ANNOUNCED=1
+
+  log "Iniciando contagem regressiva de $((COUNTDOWN_LEAD / 60)) minutos no chat."
+  announce "[MANUTENCAO] $(maint_headline) em 10 minutos. E uma rotina diaria para limpar a memoria do servidor e evitar travamentos. Voce podera reconectar em cerca de 1 minuto."
+  sleep 300
+
+  announce "[MANUTENCAO] Reinicio em 5 minutos. Procure um lugar seguro e evite combates."
+  for m in 4 3 2 1; do
+    sleep 60
+    if [ "$m" -eq 1 ]; then
+      announce "[MANUTENCAO] Reinicio em 1 minuto. Desconecte agora para evitar perda de progresso."
+    else
+      announce "[MANUTENCAO] Reinicio em $m minutos."
+    fi
+  done
+
+  for s in 55 50 45 40 35 30 25 20 15 10 5; do
+    sleep 5
+    announce "[MANUTENCAO] Reinicio em $s segundos."
+  done
+
+  sleep 5
+  announce "[MANUTENCAO] Reiniciando o servidor agora. Ate ja!"
+  log "Contagem encerrada."
+}
+
+# Espera o servidor esvaziar. Vazio, reinicia na hora — não há a quem avisar.
+# Com gente, adia até o prazo e só então faz a contagem e reinicia mesmo assim.
+await_maintenance_window() {
+  local waited=0 n polls=0
+
   while :; do
     if ! n="$(players_online)"; then
       warn "Não consegui consultar os jogadores; prosseguindo com a manutenção."
@@ -162,18 +212,25 @@ wait_for_empty() {
     fi
 
     if [ "$n" -eq 0 ]; then
-      log "Nenhum jogador online — liberado para reiniciar."
+      log "Nenhum jogador online — reiniciando agora."
       return 0
     fi
 
-    if [ "$waited" -ge "$PLAYER_WAIT_MAX" ]; then
-      warn "Esperei $((PLAYER_WAIT_MAX / 3600))h e ainda há $n jogador(es); prosseguindo."
+    if [ "$waited" -ge $((MAINT_DEADLINE - COUNTDOWN_LEAD)) ]; then
+      warn "Prazo esgotado com $n jogador(es) online — reinicio forçado após a contagem."
+      countdown_restart
       return 0
     fi
 
-    log "$n jogador(es) online — nova checagem em $((PLAYER_POLL_INTERVAL / 60)) min."
+    # Avisa ao entrar na espera e depois a cada 30 min, para quem acabou de entrar.
+    if [ $((polls % 6)) -eq 0 ]; then
+      announce "[MANUTENCAO] $(maint_headline) assim que o servidor ficar vazio. E uma rotina diaria para limpar a memoria. Se puder, encerre a sessao nos proximos minutos."
+    fi
+
+    log "$n jogador(es) online — adiando; nova checagem em $((PLAYER_POLL_INTERVAL / 60)) min."
     sleep "$PLAYER_POLL_INTERVAL"
     waited=$((waited + PLAYER_POLL_INTERVAL))
+    polls=$((polls + 1))
   done
 }
 
@@ -183,8 +240,9 @@ wait_for_empty() {
 graceful_stop() {
   local n i
 
-  if n="$(players_online)" && [ "$n" -gt 0 ]; then
-    api_post /v1/api/announce '{"message":"Manutencao: o servidor reinicia em 30 segundos."}' || true
+  # Se a contagem regressiva já rodou, avisar de novo seria redundante.
+  if [ "$ANNOUNCED" -eq 0 ] && n="$(players_online)" && [ "$n" -gt 0 ]; then
+    announce "[MANUTENCAO] O servidor reinicia em 30 segundos para manutencao."
     sleep 30
   fi
 
@@ -461,13 +519,33 @@ cleanup_old_images() {
 main() {
   cd "$COMPOSE_DIR"
 
-  # O watchdog nunca atualiza: ele só existe para levantar o que caiu.
-  [ "$MODE" != "watchdog" ] && detect_update
+  # Só o ciclo diário e o --force se importam com versão nova.
+  case "$MODE" in
+    daily | force) detect_update ;;
+  esac
 
   local healthy=0
   server_healthy && healthy=1 || true
 
-  if [ -z "$UPDATE_TAG" ] && [ "$healthy" -eq 1 ] && [ "$MODE" != "force" ]; then
+  # Desligar a máquina manda SIGTERM ao container, que o servidor ignora até
+  # levar SIGKILL — exatamente o que corrompe o save. Use este modo antes de
+  # reiniciar a máquina; o cron @reboot sobe tudo de volta depois.
+  if [ "$MODE" = "stop" ]; then
+    if [ "$healthy" -eq 1 ]; then
+      snapshot_save
+      graceful_stop
+      log "Servidor parado com segurança. Ele volta sozinho no próximo boot."
+    else
+      log "Servidor já está fora do ar; nada a parar."
+      docker compose -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
+    fi
+    report_save
+    return 0
+  fi
+
+  # O watchdog só age se o servidor caiu; os outros modos sempre reiniciam,
+  # porque o reinício diário existe para liberar a memória mesmo sem update.
+  if [ "$MODE" = "watchdog" ] && [ "$healthy" -eq 1 ]; then
     log "Servidor no ar e sem pendências — nada a fazer."
     report_save
     return 0
@@ -477,16 +555,10 @@ main() {
   # em uso fica protegida de qualquer limpeza de espaço.
   if [ -n "$UPDATE_TAG" ]; then
     pull_update || UPDATE_TAG=""
-
-    if [ -z "$UPDATE_TAG" ] && [ "$healthy" -eq 1 ]; then
-      warn "Update indisponível e servidor de pé — deixo como está."
-      report_save
-      return 0
-    fi
   fi
 
   if [ "$healthy" -eq 1 ]; then
-    [ "$MODE" != "force" ] && wait_for_empty
+    [ "$MODE" != "force" ] && await_maintenance_window
     snapshot_save
     graceful_stop
   else
