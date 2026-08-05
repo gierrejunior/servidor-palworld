@@ -274,20 +274,34 @@ await_maintenance_window() {
   done
 }
 
+# Contagem regressiva curta, usada em toda parada que pega alguem online e que
+# nao teve os 10 minutos do ciclo diario. Ninguem some do jogo sem aviso.
+countdown_curto() {
+  local s
+  ANNOUNCED=1
+
+  if [ "$MODE" = "stop" ]; then
+    announce "[MANUTENCAO] O servidor sera DESLIGADO em 30 segundos - manutencao na maquina, sem previsao de volta. Procure um lugar seguro e desconecte."
+  else
+    announce "[MANUTENCAO] $(maint_headline) em 30 segundos. Procure um lugar seguro - voce podera reconectar em cerca de 1 minuto."
+  fi
+  log "Contagem regressiva de 30s iniciada no chat."
+
+  sleep 10; announce "[MANUTENCAO] Reinicio em 20 segundos."
+  sleep 10; announce "[MANUTENCAO] Reinicio em 10 segundos."
+  sleep 5;  announce "[MANUTENCAO] Reinicio em 5 segundos. Desconecte agora."
+  sleep 5;  announce "[MANUTENCAO] Reiniciando o servidor. Ate ja!"
+}
+
 # O servidor ignora SIGTERM: `docker stop` sempre termina em SIGKILL, e um
 # SIGKILL no meio da gravação é o que corrompeu o save. O caminho limpo é
 # mandar salvar e desligar pela API, e só então derrubar o container.
 graceful_stop() {
   local n i
 
-  # Se a contagem regressiva já rodou, avisar de novo seria redundante.
+  # Se a contagem de 10 minutos já rodou, avisar de novo seria redundante.
   if [ "$ANNOUNCED" -eq 0 ] && n="$(players_online)" && [ "$n" -gt 0 ]; then
-    if [ "$MODE" = "stop" ]; then
-      announce "[MANUTENCAO] O servidor sera DESLIGADO em 30 segundos - manutencao na maquina, sem previsao de volta imediata. Procure um lugar seguro e desconecte agora. Aviso no Discord quando voltar."
-    else
-      announce "[MANUTENCAO] O servidor reinicia em 30 segundos para manutencao. Voce podera reconectar em cerca de 1 minuto."
-    fi
-    sleep 30
+    countdown_curto
   fi
 
   if api_post /v1/api/save; then
