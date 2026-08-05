@@ -74,7 +74,9 @@ for i, d in enumerate(tempo):
     # Maior primeiro: a base da pilha fica visualmente estavel entre os dias.
     partes = sorted(d["j"].items(), key=lambda kv: -kv[1])
     segmentos = "".join(
-        f'<i style="height:{barra(n, max_cap)}%;background:{cor_de.get(nome, "#6b7684")}"></i>'
+        '<i data-j="{}" style="height:{}%;background:{}"></i>'.format(
+            E(nome), barra(n, max_cap), cor_de.get(nome, "#6b7684")
+        )
         for nome, n in partes
     )
     # Aspas simples de proposito: este HTML vai dentro de um atributo
@@ -86,19 +88,29 @@ for i, d in enumerate(tempo):
         for nome, n in partes
     )
     rotulo = f'{date.fromisoformat(d["d"]):%d/%m}'
-    # Rotulo so nas pontas e a cada 5 dias: eixo legivel sem virar poluicao.
-    mostra = i == 0 or i == len(tempo) - 1 or i % 5 == 0
     colunas.append(
         f'<div class="dia" tabindex="0" role="img"'
         f' aria-label="{rotulo}: {total} capturas"'
         f' data-tip="<b>{rotulo}</b> — {total} capturas<br>{detalhe}">'
         f'<div class="pilha">{segmentos}</div>'
-        f'<span>{rotulo if mostra else ""}</span></div>'
+        f'<span>{rotulo}</span></div>'
     )
 barras_tempo = "".join(colunas)
 
+
+def eixo_y(maximo):
+    """Tres marcas (topo, meio, zero) com as linhas de grade correspondentes."""
+    marcas = "".join(
+        f"<span>{v}</span>" for v in (maximo, maximo // 2, 0)
+    )
+    return f'<div class="eixo-y">{marcas}</div>'
+
+
+eixo_y_tempo = eixo_y(max_cap)
+
 legenda = "".join(
-    f'<span class="leg"><i style="background:{c}"></i>{E(n)}</span>'
+    f'<button class="leg" data-jogador="{E(n)}" title="Clique para isolar {E(n)}">'
+    f'<i style="background:{c}"></i>{E(n)}</button>'
     for n, c in cor_de.items()
     if any(n in d["j"] for d in tempo)
 )
@@ -185,9 +197,24 @@ HTML = f"""<!doctype html>
   .mini i {{ display:block; height:100%; background:var(--ac); border-radius:99px; }}
   .dim {{ color:var(--dim); font-size:.85rem; }}
   .melhor {{ font-size:.9rem; }}
-  .tempo {{ display:flex; align-items:flex-end; gap:3px; height:170px; }}
+  /* Estrutura comum dos graficos de barra: coluna de valores + area plotada.
+     A area tem altura fixa para as linhas de grade baterem com as marcas. */
+  .grafico {{ display:flex; gap:9px; }}
+  .eixo-y {{ flex:none; width:34px; height:150px; display:flex;
+    flex-direction:column; justify-content:space-between; text-align:right;
+    font-size:.65rem; color:var(--dim); }}
+  .eixo-y span {{ line-height:1; transform:translateY(-.35em); }}
+  .area {{ flex:1; min-width:0; position:relative; }}
+  .grade {{ position:absolute; left:0; right:0; top:0; height:150px;
+    pointer-events:none; }}
+  .grade i {{ position:absolute; left:0; right:0; height:1px;
+    background:var(--line); opacity:.6; }}
+
+  .tempo {{ display:flex; align-items:flex-end; gap:3px; height:170px;
+    position:relative; }}
   .dia {{ flex:1; display:flex; flex-direction:column; justify-content:flex-end;
-    align-items:center; gap:6px; height:100%; min-width:0; }}
+    align-items:center; height:100%; min-width:0; }}
+  .dia > span {{ height:20px; flex:none; display:flex; align-items:center; }}
   /* tooltip proprio: o title nativo demora ~1s e nao aceita formatacao */
   .tip {{ position:fixed; z-index:50; pointer-events:none; opacity:0;
     transition:opacity .12s; background:var(--card); color:var(--tx);
@@ -207,10 +234,20 @@ HTML = f"""<!doctype html>
     transform:rotate(-45deg); }}
   .eixo {{ display:flex; justify-content:space-between; margin-top:6px;
     font-size:.7rem; color:var(--dim); }}
-  .legenda {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px;
+  .legenda {{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px;
     font-size:.82rem; color:var(--dim); }}
-  .leg {{ display:inline-flex; align-items:center; gap:6px; }}
-  .leg i {{ width:11px; height:11px; border-radius:3px; display:inline-block; }}
+  .leg {{ display:inline-flex; align-items:center; gap:6px; background:none;
+    border:1px solid transparent; border-radius:99px; padding:4px 10px;
+    font:inherit; font-size:.82rem; color:var(--dim); cursor:pointer;
+    transition:opacity .15s, border-color .15s; }}
+  .leg:hover {{ border-color:var(--line); color:var(--tx); }}
+  .leg.ativo {{ border-color:var(--ac); color:var(--tx); }}
+  .leg.apagado {{ opacity:.35; }}
+  .leg i {{ width:11px; height:11px; border-radius:3px; display:inline-block;
+    flex:none; }}
+  /* Foco: o que nao e do jogador escolhido desbota, sem sumir do grafico. */
+  [data-j] {{ transition:opacity .18s; }}
+  .dica-foco {{ font-size:.75rem; color:var(--dim); margin-top:8px; }}
   .linha {{ display:grid; grid-template-columns:150px 1fr 40px; gap:10px;
     align-items:center; margin-bottom:7px; }}
   .rot {{ font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
@@ -292,10 +329,12 @@ HTML = f"""<!doctype html>
   .trofeu .det {{ color:var(--dim); font-size:.78rem; }}
 
   /* atividade por hora */
-  .horas {{ display:flex; align-items:flex-end; gap:3px; height:150px; }}
+  .horas {{ display:flex; align-items:flex-end; gap:3px; height:170px;
+    position:relative; }}
   .hora {{ flex:1; display:flex; flex-direction:column; justify-content:flex-end;
-    align-items:center; gap:5px; height:100%; min-width:0; }}
-  .hora span {{ font-size:.6rem; color:var(--dim); height:.8em; }}
+    align-items:center; height:100%; min-width:0; }}
+  .hora > span {{ font-size:.6rem; color:var(--dim); height:20px; flex:none;
+    display:flex; align-items:center; }}
 
   /* especies exclusivas */
   .excl {{ padding:10px 0; border-top:1px solid var(--line); }}
@@ -332,7 +371,13 @@ HTML = f"""<!doctype html>
 
   <h2>Capturas por dia <span class="dim">— por jogador</span></h2>
   <div class="card">
-    <div class="tempo">{barras_tempo}</div>
+    <div class="grafico">
+      {eixo_y_tempo}
+      <div class="area">
+        <div class="grade"><i style="top:0"></i><i style="top:50%"></i><i style="top:100%"></i></div>
+        <div class="tempo">{barras_tempo}</div>
+      </div>
+    </div>
     <div class="legenda">{legenda}</div>
   </div>
 
@@ -350,8 +395,16 @@ HTML = f"""<!doctype html>
   <div class="dois">
     <div>
       <h2>Quando cada um joga <span class="dim">— hora da captura</span></h2>
-      <div class="card"><div id="horas" class="horas"></div>
-        <div class="legenda" id="leg-horas"></div></div>
+      <div class="card">
+        <div class="grafico">
+          <div class="eixo-y" id="eixo-horas"></div>
+          <div class="area">
+            <div class="grade"><i style="top:0"></i><i style="top:50%"></i><i style="top:100%"></i></div>
+            <div id="horas" class="horas"></div>
+          </div>
+        </div>
+        <div class="legenda" id="leg-horas"></div>
+      </div>
     </div>
     <div>
       <h2>Corrida da coleção <span class="dim">— pals acumulados</span></h2>
@@ -533,7 +586,7 @@ filtrar();
     const det = ativos.map(n =>
       `<span style='color:${{corDe(n)}}'>■</span> ${{esc(n)}}: <b>${{porHora[n][h]}}</b>`).join('<br>');
     const segs = ativos.map(n =>
-      `<i style="height:${{porHora[n][h] / pico * 100}}%;background:${{corDe(n)}}"></i>`).join('');
+      `<i data-j="${{esc(n)}}" style="height:${{porHora[n][h] / pico * 100}}%;background:${{corDe(n)}}"></i>`).join('');
     const hh = String(h).padStart(2, '0');
     return `<div class="hora" tabindex="0" role="img"
         aria-label="${{hh}} horas: ${{totalHora(h)}} capturas"
@@ -542,8 +595,12 @@ filtrar();
       <span>${{h % 6 === 0 ? hh + 'h' : ''}}</span></div>`;
   }}).join('');
 
+  $('eixo-horas').innerHTML =
+    [pico, Math.round(pico / 2), 0].map(v => `<span>${{v}}</span>`).join('');
+
   $('leg-horas').innerHTML = donos.map(n =>
-    `<span class="leg"><i style="background:${{corDe(n)}}"></i>${{esc(n)}}</span>`).join('');
+    `<button class="leg" data-jogador="${{esc(n)}}" title="Clique para isolar ${{esc(n)}}">
+      <i style="background:${{corDe(n)}}"></i>${{esc(n)}}</button>`).join('');
 }})();
 
 // ---- corrida da colecao (acumulado) ----
@@ -564,9 +621,13 @@ filtrar();
   const y = v => H - (v / teto) * H;
 
   const linhas = donos.map(n =>
-    `<polyline fill="none" stroke="${{corDe(n)}}" stroke-width="2.5"
-      stroke-linejoin="round" stroke-linecap="round"
+    `<polyline data-j="${{esc(n)}}" fill="none" stroke="${{corDe(n)}}" stroke-width="2.5"
+      stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
       points="${{serie[n].map((v, i) => `${{x(i).toFixed(1)}},${{y(v).toFixed(1)}}`).join(' ')}}"/>`).join('');
+
+  const grade = [0, 0.5, 1].map(f =>
+    `<line x1="0" x2="${{W}}" y1="${{(H * f).toFixed(1)}}" y2="${{(H * f).toFixed(1)}}"
+      stroke="var(--line)" stroke-width="1" vector-effect="non-scaling-stroke" opacity=".6"/>`).join('');
 
   // Faixas invisiveis por dia: dao um alvo de mouse largo o suficiente, que a
   // linha sozinha (2.5px) nao daria.
@@ -584,15 +645,51 @@ filtrar();
   const rotulo = s => s.split('-').reverse().slice(0, 2).join('/');
 
   $('corrida').innerHTML = `
-    <svg viewBox="0 -6 ${{W}} ${{H + 12}}" preserveAspectRatio="none"
-         style="width:100%;height:170px" role="img"
-         aria-label="Pals acumulados por jogador ao longo do tempo">${{linhas}}${{fatias}}</svg>
-    <div class="eixo"><span>${{rotulo(dias[0])}}</span><span>${{rotulo(meio)}}</span>
-      <span>${{rotulo(dias[dias.length - 1])}}</span></div>
+    <div class="grafico">
+      <div class="eixo-y">${{[teto, Math.round(teto / 2), 0].map(v => `<span>${{v}}</span>`).join('')}}</div>
+      <div class="area">
+        <svg viewBox="0 -6 ${{W}} ${{H + 12}}" preserveAspectRatio="none"
+             style="width:100%;height:150px;display:block" role="img"
+             aria-label="Pals acumulados por jogador ao longo do tempo">
+          ${{grade}}${{linhas}}${{fatias}}</svg>
+        <div class="eixo"><span>${{rotulo(dias[0])}}</span><span>${{rotulo(meio)}}</span>
+          <span>${{rotulo(dias[dias.length - 1])}}</span></div>
+      </div>
+    </div>
     <div class="legenda">${{donos.map(n =>
-      `<span class="leg"><i style="background:${{corDe(n)}}"></i>${{esc(n)}}
-       <b style="color:var(--tx)">${{serie[n][dias.length - 1]}}</b></span>`).join('')}}</div>`;
+      `<button class="leg" data-jogador="${{esc(n)}}" title="Clique para isolar ${{esc(n)}}">
+        <i style="background:${{corDe(n)}}"></i>${{esc(n)}}
+        <b style="color:var(--tx)">${{serie[n][dias.length - 1]}}</b></button>`).join('')}}</div>
+    <div class="dica-foco">Clique num jogador da legenda para isolá-lo em todos os gráficos.</div>`;
 }})();
+
+// ---- foco por jogador, compartilhado pelos tres graficos ----
+let FOCO = null;
+
+function aplicarFoco() {{
+  document.querySelectorAll('[data-j]').forEach(el => {{
+    const meu = !FOCO || el.dataset.j === FOCO;
+    el.style.opacity = meu ? '' : '.12';
+    if (el.tagName === 'polyline') el.setAttribute('stroke-width', meu && FOCO ? '4' : '2.5');
+  }});
+  document.querySelectorAll('.leg[data-jogador]').forEach(el => {{
+    el.classList.toggle('ativo', FOCO === el.dataset.jogador);
+    el.classList.toggle('apagado', !!FOCO && FOCO !== el.dataset.jogador);
+  }});
+}}
+
+function alternarFoco(nome) {{
+  FOCO = FOCO === nome ? null : nome;
+  aplicarFoco();
+}}
+
+// Delegacao: a legenda das horas e da corrida so existe depois do script rodar.
+document.addEventListener('click', e => {{
+  const leg = e.target.closest('.leg[data-jogador]');
+  if (leg) {{ alternarFoco(leg.dataset.jogador); return; }}
+  const linha = e.target.closest('polyline[data-j]');
+  if (linha) alternarFoco(linha.dataset.j);
+}});
 
 // ---- trofeus ----
 // Titulos calculados na hora a partir da colecao de cada um. So entra quem
