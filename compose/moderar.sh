@@ -27,7 +27,7 @@ API_PORT=8212
 log()  { printf '%s\n' "$*"; }
 erro() { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 
-ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)"
+ip="$([ "$(docker inspect -f "{{.HostConfig.NetworkMode}}" "$CONTAINER" 2>/dev/null)" = host ] && echo 127.0.0.1 || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" "$CONTAINER" 2>/dev/null || true)"
 [ -n "$ip" ] || { erro "servidor fora do ar"; exit 1; }
 
 pw="$(docker run --rm --network none -v "$SAVED_DIR:/data" alpine \

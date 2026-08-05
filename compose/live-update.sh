@@ -29,7 +29,7 @@ trap 'rm -rf "$tmp"' EXIT
 
 agora="$(date '+%Y-%m-%dT%H:%M:%S%:z')"
 
-ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)"
+ip="$([ "$(docker inspect -f "{{.HostConfig.NetworkMode}}" "$CONTAINER" 2>/dev/null)" = host ] && echo 127.0.0.1 || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" "$CONTAINER" 2>/dev/null || true)"
 pw=""
 [ -n "$ip" ] && pw="$(docker run --rm --network none -v "$SAVED_DIR:/data" alpine \
   sh -c 'sed -n "s/.*AdminPassword=\"\([^\"]*\)\".*/\1/p" /data/Config/LinuxServer/PalWorldSettings.ini' \

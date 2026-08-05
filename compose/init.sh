@@ -164,7 +164,11 @@ bump_compose_tag() {
 # ------------------------------------------------------------- REST API ----
 
 container_ip() {
-  docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true
+  local modo ip
+  modo="$(docker inspect -f "{{.HostConfig.NetworkMode}}" "$CONTAINER" 2>/dev/null || true)"
+  if [ "$modo" = "host" ]; then printf "127.0.0.1"; return 0; fi
+  ip="$(docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" "$CONTAINER" 2>/dev/null || true)"
+  printf "%s" "$ip"
 }
 
 admin_pw() {

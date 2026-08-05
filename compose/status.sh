@@ -44,7 +44,7 @@ echo "  reinicios .... $restarts"
 echo "  desde ........ $(date -d "$since" '+%d/%m %H:%M:%S' 2>/dev/null || echo "$since")"
 echo
 
-ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)"
+ip="$([ "$(docker inspect -f "{{.HostConfig.NetworkMode}}" "$CONTAINER" 2>/dev/null)" = host ] && echo 127.0.0.1 || docker inspect -f "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" "$CONTAINER" 2>/dev/null || true)"
 pw="$(docker run --rm --network none -v "$SAVED_DIR:/data" alpine \
   sh -c 'sed -n "s/.*AdminPassword=\"\([^\"]*\)\".*/\1/p" /data/Config/LinuxServer/PalWorldSettings.ini' 2>/dev/null | tr -d '\r\n' || true)"
 
