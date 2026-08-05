@@ -117,7 +117,7 @@ rotate_log
 
 # Saved/ pertence ao uid 999 do container; sem sudo, escrevemos via container root.
 as_root() {
-  docker run --rm -v "$SAVED_DIR:/data" "$ROOT_IMAGE" sh -euc "$1"
+  docker run --rm --network none -v "$SAVED_DIR:/data" "$ROOT_IMAGE" sh -euc "$1"
 }
 
 # ---------------------------------------------------------------- versão ----

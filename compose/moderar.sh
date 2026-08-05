@@ -30,7 +30,7 @@ erro() { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)"
 [ -n "$ip" ] || { erro "servidor fora do ar"; exit 1; }
 
-pw="$(docker run --rm -v "$SAVED_DIR:/data" alpine \
+pw="$(docker run --rm --network none -v "$SAVED_DIR:/data" alpine \
   sh -c 'sed -n "s/.*AdminPassword=\"\([^\"]*\)\".*/\1/p" /data/Config/LinuxServer/PalWorldSettings.ini' \
   2>/dev/null | tr -d '\r\n')"
 [ -n "$pw" ] || { erro "nao consegui ler a senha de admin"; exit 1; }

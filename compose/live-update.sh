@@ -31,7 +31,7 @@ agora="$(date '+%Y-%m-%dT%H:%M:%S%:z')"
 
 ip="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)"
 pw=""
-[ -n "$ip" ] && pw="$(docker run --rm -v "$SAVED_DIR:/data" alpine \
+[ -n "$ip" ] && pw="$(docker run --rm --network none -v "$SAVED_DIR:/data" alpine \
   sh -c 'sed -n "s/.*AdminPassword=\"\([^\"]*\)\".*/\1/p" /data/Config/LinuxServer/PalWorldSettings.ini' \
   2>/dev/null | tr -d '\r\n' || true)"
 
