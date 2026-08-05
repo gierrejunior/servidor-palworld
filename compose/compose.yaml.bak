@@ -5,14 +5,6 @@ services:
     entrypoint: /pal/helper.sh
     restart: unless-stopped
 
-    # Sem isto, cada pacote UDP do jogo passa pelo docker-proxy: um processo em
-    # espaco de usuario que precisa ser agendado e copia pacote a pacote. Ele
-    # engasga sob carga, e o atraso vira rubber banding para quem esta jogando.
-    # Com a rede do host o trafego vai do kernel direto ao servidor.
-    # Em troca, o container enxerga as interfaces da maquina - por isso a porta
-    # 8212 (API de admin) fica fechada no ufw.
-    network_mode: host
-
     # O servidor ignora SIGTERM, então este prazo é só a rede de segurança para
     # quando o init.sh não conseguir desligar pela REST API. O caminho normal
     # salva e encerra pela API antes de chegar aqui.
@@ -25,6 +17,8 @@ services:
       - -NoAsyncLoadingThread
       - -UseMultithreadForDS
 
+    ports:
+      - "8211:8211/udp"
 
     volumes:
       - ./helper.sh:/pal/helper.sh:ro
