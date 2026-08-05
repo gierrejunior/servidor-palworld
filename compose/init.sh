@@ -81,8 +81,15 @@ if ! flock -n 9; then
       flock -w 15 9 || warn "Seguindo sem o lock; o desligamento tem prioridade."
       ;;
     *)
-      err "Outra execução do init.sh está em andamento; abortando."
-      exit 1
+      # O watchdog roda a cada 5 min e leva ~10s. Se ele tiver o lock, esperar
+      # resolve; desistir faria o ciclo diario pular o dia inteiro, que foi
+      # exatamente o que aconteceu em 05/08/2026 as 05:00:01.
+      log "Outra execução em andamento; aguardando até 180s pelo lock..."
+      if ! flock -w 180 9; then
+        err "Lock não liberado em 180s; abortando."
+        exit 1
+      fi
+      log "Lock obtido; seguindo."
       ;;
   esac
 fi
