@@ -30,15 +30,14 @@ fi
 
 # Compara ignorando o carimbo de hora.
 if [ -f "$DOCS/dados.json" ] \
-   && diff -q <(jq -S 'del(.gerado_em)' "$DOCS/dados.json" 2>/dev/null) \
-              <(jq -S 'del(.gerado_em)' "$tmp/dados.json") >/dev/null 2>&1; then
+   && diff -q <(jq -S 'del(.gerado_em, .gist)' "$DOCS/dados.json" 2>/dev/null) \
+              <(jq -S 'del(.gerado_em, .gist)' "$tmp/dados.json") >/dev/null 2>&1; then
   log "nada mudou desde a ultima publicacao."
   exit 0
 fi
 
-log "dados mudaram; gerando dashboard..."
-cp "$tmp/dados.json" "$DOCS/dados.json"
-python3 "$COMPOSE_DIR/palstats/gerar-dashboard.py" "$DOCS/dados.json" "$DOCS/index.html" \
+log "dados mudaram; montando o site..."
+python3 "$COMPOSE_DIR/palstats/gerar-dashboard.py" "$tmp/dados.json" "$DOCS" \
   "$(cat "$COMPOSE_DIR/gist-id" 2>/dev/null || true)" >/dev/null
 
 cd "$REPO_DIR"
