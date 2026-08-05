@@ -22,10 +22,13 @@ PULL_ATTEMPTS=3
 MAX_RESTORE_ATTEMPTS=5
 KEEP_SNAPSHOTS=10
 
-# Subida normal leva ~7s. Depois de uma atualizacao o primeiro boot pode
-# migrar dados e demorar bem mais, entao o prazo dobra nesse caso.
+# Subida normal leva ~7s. Depois de uma atualizacao o primeiro boot pode migrar
+# dados e demorar muito mais. Se o prazo estourar com o container saudavel, o
+# script espera mais rodadas em vez de declarar falha - estourar o prazo so quer
+# dizer que paramos de olhar, nao que o servidor quebrou.
 STARTUP_TIMEOUT=180
 STARTUP_TIMEOUT_UPDATE=600
+ESPERAS_EXTRAS=3
 
 # Rodando às 5:00, o prazo de 6h leva o reinício forçado às 11:00; a contagem
 # regressiva começa 10 min antes disso.
@@ -334,7 +337,7 @@ free_disk_space() {
 }
 
 pull_update() {
-  local ref="ghcr.io/${REGISTRY_REPO}:${UPDATE_TAG}" out attempt
+  local ref="ghcr.io/${REGISTRY_REPO}:${UPDATE_TAG}" out attempt espera
   for attempt in $(seq 1 "$PULL_ATTEMPTS"); do
     log "Baixando $ref (tentativa $attempt/$PULL_ATTEMPTS, $(avail_gb)GB livres)..."
     if out="$(docker pull "$ref" 2>&1)"; then
@@ -346,8 +349,11 @@ pull_update() {
     if grep -qiE 'no space left|not enough space|disk full' <<<"$out"; then
       free_disk_space
     else
-      warn "Falha no download; nova tentativa em 30s."
-      sleep 30
+      # Espera crescente: queda de rede raramente se resolve em 30s, e o
+      # servidor segue no ar enquanto esperamos.
+      espera=$((attempt * 60))
+      warn "Falha no download; nova tentativa em ${espera}s."
+      sleep "$espera"
     fi
   done
 
@@ -468,11 +474,14 @@ server_healthy() {
   [ "$run2" = "true" ] && [ "$count1" = "$count2" ]
 }
 
-# 0 = subiu, 1 = save corrompido, 2 = falhou por outro motivo
+# 0 = subiu   1 = save corrompido   2 = loop de crash   3 = prazo estourou de pe
 wait_for_server() {
   local limite="$STARTUP_TIMEOUT"
   [ -n "$UPDATE_TAG" ] && limite="$STARTUP_TIMEOUT_UPDATE"
-  local deadline=$((SECONDS + limite)) logs
+  local deadline=$((SECONDS + limite)) logs reinicios_ini reinicios
+
+  reinicios_ini="$(docker inspect -f '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0)"
+
   while [ $SECONDS -lt $deadline ]; do
     logs="$(docker compose -f "$COMPOSE_FILE" logs --no-color 2>/dev/null || true)"
 
@@ -482,36 +491,51 @@ wait_for_server() {
     if grep -q "Running Palworld dedicated server on" <<<"$logs"; then
       return 0
     fi
-    if [ "$(docker inspect -f '{{.State.Restarting}}' "$CONTAINER" 2>/dev/null)" = "true" ]; then
+
+    # Loop de crash de verdade: o container esta reiniciando ou ja reiniciou
+    # sozinho desde que comecamos a olhar.
+    reinicios="$(docker inspect -f '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0)"
+    if [ "$(docker inspect -f '{{.State.Restarting}}' "$CONTAINER" 2>/dev/null)" = "true" ] \
+       || [ "$reinicios" -gt "$reinicios_ini" ]; then
       return 2
     fi
+
     sleep 3
   done
-  return 2
+
+  # Prazo estourou, mas o container nunca reiniciou: esta so demorando.
+  return 3
 }
 
+# 0 = confirmado no ar   1 = falhou   2 = de pe, mas sem confirmacao nos logs
 start_server() {
-  local attempt=0 status
+  local attempt=0 status extras=0 subiu=0 limite
   local -a backups
   mapfile -t backups < <(good_backups)
 
   while :; do
-    log "Subindo o container..."
-    docker compose -f "$COMPOSE_FILE" up -d
+    if [ "$subiu" -eq 0 ]; then
+      log "Subindo o container..."
+      docker compose -f "$COMPOSE_FILE" up -d
+      subiu=1
+    fi
 
-    set +e
-    wait_for_server
-    status=$?
-    set -e
+    # `|| status=$?` em vez de set +e/-e: mexer no set -e aqui dentro vazaria
+    # para quem chamou e derrubaria o script antes de ele ler o retorno.
+    status=0
+    wait_for_server || status=$?
 
     case $status in
       0)
         log "Servidor no ar em :8211 (versão $(current_tag))"
         return 0
         ;;
+
       1)
         warn "Servidor recusou o save (corrompido)."
         docker compose -f "$COMPOSE_FILE" down
+        subiu=0
+        extras=0
 
         if [ "$attempt" -ge "$MAX_RESTORE_ATTEMPTS" ] || [ "$attempt" -ge "${#backups[@]}" ]; then
           err "Backups esgotados após $attempt tentativa(s). Restaure manualmente."
@@ -521,12 +545,29 @@ start_server() {
         restore_backup "${backups[$attempt]}"
         attempt=$((attempt + 1))
         ;;
-      *)
-        local limite="$STARTUP_TIMEOUT"
-        [ -n "$UPDATE_TAG" ] && limite="$STARTUP_TIMEOUT_UPDATE"
-        err "Servidor não subiu dentro de ${limite}s. Últimas linhas:"
+
+      2)
+        err "Servidor em loop de reinício — não é lentidão. Últimas linhas:"
         docker compose -f "$COMPOSE_FILE" logs --no-color --tail 30
         return 1
+        ;;
+
+      3)
+        limite="$STARTUP_TIMEOUT"
+        [ -n "$UPDATE_TAG" ] && limite="$STARTUP_TIMEOUT_UPDATE"
+        extras=$((extras + 1))
+
+        if [ "$extras" -le "$ESPERAS_EXTRAS" ]; then
+          # Container de pe e sem reinicios: so esta demorando. Nao recriamos
+          # nada, apenas continuamos esperando.
+          warn "Sem confirmação após ${limite}s, mas o container está de pé e estável — esperando mais (${extras}/${ESPERAS_EXTRAS})."
+          continue
+        fi
+
+        warn "Container de pé há $(( (extras * limite) / 60 )) min sem confirmar nos logs."
+        warn "Deixo para o watchdog acompanhar; não vou mexer em mais nada."
+        docker compose -f "$COMPOSE_FILE" logs --no-color --tail 15
+        return 2
         ;;
     esac
   done
@@ -615,8 +656,26 @@ main() {
   [ -n "$UPDATE_TAG" ] && bump_compose_tag
 
   preflight_save
-  start_server
-  cleanup_old_images
+
+  local rc=0
+  start_server || rc=$?
+
+  case $rc in
+    0)
+      # Unica situacao em que a imagem antiga pode ir embora: se a nova nao
+      # tivesse subido, ela seria a unica forma de voltar sem baixar 13GB.
+      cleanup_old_images
+      ;;
+    2)
+      warn "Subida não confirmada — mantendo a imagem anterior para um eventual rollback."
+      ;;
+    *)
+      prune_snapshots
+      report_save
+      return 1
+      ;;
+  esac
+
   prune_snapshots
   report_save
 }
