@@ -69,7 +69,7 @@ tempo = dados["linha_tempo"][-30:]
 max_cap = max((sum(d["j"].values()) for d in tempo), default=1)
 
 colunas = []
-for d in tempo:
+for i, d in enumerate(tempo):
     total = sum(d["j"].values())
     # Maior primeiro: a base da pilha fica visualmente estavel entre os dias.
     partes = sorted(d["j"].items(), key=lambda kv: -kv[1])
@@ -77,11 +77,23 @@ for d in tempo:
         f'<i style="height:{barra(n, max_cap)}%;background:{cor_de.get(nome, "#6b7684")}"></i>'
         for nome, n in partes
     )
-    detalhe = " · ".join(f"{E(nome)}: {n}" for nome, n in partes)
+    # Aspas simples de proposito: este HTML vai dentro de um atributo
+    # delimitado por aspas duplas, e aspas duplas aqui truncariam o atributo.
+    detalhe = "<br>".join(
+        "<span style='color:{}'>■</span> {}: <b>{}</b>".format(
+            cor_de.get(nome, "#6b7684"), E(nome), n
+        )
+        for nome, n in partes
+    )
+    rotulo = f'{date.fromisoformat(d["d"]):%d/%m}'
+    # Rotulo so nas pontas e a cada 5 dias: eixo legivel sem virar poluicao.
+    mostra = i == 0 or i == len(tempo) - 1 or i % 5 == 0
     colunas.append(
-        f'<div class="dia" title="{date.fromisoformat(d["d"]):%d/%m} — {total} capturas ({detalhe})">'
+        f'<div class="dia" tabindex="0" role="img"'
+        f' aria-label="{rotulo}: {total} capturas"'
+        f' data-tip="<b>{rotulo}</b> — {total} capturas<br>{detalhe}">'
         f'<div class="pilha">{segmentos}</div>'
-        f'<span>{date.fromisoformat(d["d"]):%d/%m}</span></div>'
+        f'<span>{rotulo if mostra else ""}</span></div>'
     )
 barras_tempo = "".join(colunas)
 
@@ -176,12 +188,25 @@ HTML = f"""<!doctype html>
   .tempo {{ display:flex; align-items:flex-end; gap:3px; height:170px; }}
   .dia {{ flex:1; display:flex; flex-direction:column; justify-content:flex-end;
     align-items:center; gap:6px; height:100%; min-width:0; }}
+  /* tooltip proprio: o title nativo demora ~1s e nao aceita formatacao */
+  .tip {{ position:fixed; z-index:50; pointer-events:none; opacity:0;
+    transition:opacity .12s; background:var(--card); color:var(--tx);
+    border:1px solid var(--line); border-radius:9px; padding:8px 11px;
+    font-size:.82rem; line-height:1.5; box-shadow:0 6px 24px rgba(0,0,0,.35);
+    max-width:260px; }}
+  .tip.on {{ opacity:1; }}
+  .dia:focus, .hora:focus {{ outline:2px solid var(--ac); outline-offset:2px;
+    border-radius:4px; }}
+  .dia:hover .pilha, .hora:hover .pilha {{ filter:brightness(1.25); }}
+
   .pilha {{ width:100%; display:flex; flex-direction:column-reverse;
     justify-content:flex-start; flex:1; min-height:0; }}
   .pilha i {{ width:100%; min-height:2px; display:block; }}
   .pilha i:last-child {{ border-radius:3px 3px 0 0; }}
   .dia span {{ font-size:.6rem; color:var(--dim); white-space:nowrap;
     transform:rotate(-45deg); }}
+  .eixo {{ display:flex; justify-content:space-between; margin-top:6px;
+    font-size:.7rem; color:var(--dim); }}
   .legenda {{ display:flex; flex-wrap:wrap; gap:12px; margin-top:26px;
     font-size:.82rem; color:var(--dim); }}
   .leg {{ display:inline-flex; align-items:center; gap:6px; }}
@@ -390,6 +415,37 @@ const mediaIv = p => (p.iv[0] + p.iv[1] + p.iv[2]) / 3;
 const CORES = {CORES_JS};
 const corDe = n => CORES[n] || '#6b7684';
 
+// ---- tooltip dos graficos ----
+// Um unico elemento reaproveitado por todas as barras: delegacao de evento em
+// vez de um listener por coluna. Segue o mouse e tambem responde ao teclado.
+const tip = Object.assign(document.createElement('div'), {{ className: 'tip' }});
+document.body.appendChild(tip);
+
+function mostrarTip(alvo, x, y) {{
+  tip.innerHTML = alvo.dataset.tip;
+  tip.classList.add('on');
+  const r = tip.getBoundingClientRect();
+  // Vira o lado quando encostaria na borda da janela.
+  const px = Math.min(Math.max(8, x + 14), innerWidth - r.width - 8);
+  const py = y - r.height - 14 < 8 ? y + 20 : y - r.height - 14;
+  tip.style.left = px + 'px';
+  tip.style.top = py + 'px';
+}}
+const esconderTip = () => tip.classList.remove('on');
+
+document.addEventListener('mousemove', e => {{
+  const alvo = e.target.closest('[data-tip]');
+  if (alvo) mostrarTip(alvo, e.clientX, e.clientY); else esconderTip();
+}});
+document.addEventListener('focusin', e => {{
+  const alvo = e.target.closest('[data-tip]');
+  if (!alvo) return esconderTip();
+  const r = alvo.getBoundingClientRect();
+  mostrarTip(alvo, r.left + r.width / 2, r.top);
+}});
+document.addEventListener('focusout', esconderTip);
+addEventListener('scroll', esconderTip, {{ passive: true }});
+
 // ---- explorador com rolagem infinita ----
 // Os filtros sempre percorrem D.pals inteiro; a rolagem so controla quanto ja
 // foi desenhado. Nada de polling: um IntersectionObserver avisa quando chegar
@@ -473,12 +529,17 @@ filtrar();
   const pico = Math.max(...Array.from({{length: 24}}, (_, h) => totalHora(h)), 1);
 
   $('horas').innerHTML = Array.from({{length: 24}}, (_, h) => {{
-    const det = donos.filter(n => porHora[n][h]).map(n => `${{esc(n)}}: ${{porHora[n][h]}}`).join(' · ');
-    const segs = donos.filter(n => porHora[n][h]).map(n =>
+    const ativos = donos.filter(n => porHora[n][h]).sort((a, b) => porHora[b][h] - porHora[a][h]);
+    const det = ativos.map(n =>
+      `<span style='color:${{corDe(n)}}'>■</span> ${{esc(n)}}: <b>${{porHora[n][h]}}</b>`).join('<br>');
+    const segs = ativos.map(n =>
       `<i style="height:${{porHora[n][h] / pico * 100}}%;background:${{corDe(n)}}"></i>`).join('');
-    return `<div class="hora" title="${{String(h).padStart(2,'0')}}h — ${{totalHora(h)}} capturas${{det ? ' (' + det + ')' : ''}}">
+    const hh = String(h).padStart(2, '0');
+    return `<div class="hora" tabindex="0" role="img"
+        aria-label="${{hh}} horas: ${{totalHora(h)}} capturas"
+        data-tip="<b>${{hh}}h às ${{String((h+1)%24).padStart(2,'0')}}h</b> — ${{totalHora(h)}} capturas${{det ? '<br>' + det : ''}}">
       <div class="pilha">${{segs}}</div>
-      <span>${{h % 3 === 0 ? String(h).padStart(2,'0') : ''}}</span></div>`;
+      <span>${{h % 6 === 0 ? hh + 'h' : ''}}</span></div>`;
   }}).join('');
 
   $('leg-horas').innerHTML = donos.map(n =>
@@ -505,18 +566,32 @@ filtrar();
   const linhas = donos.map(n =>
     `<polyline fill="none" stroke="${{corDe(n)}}" stroke-width="2.5"
       stroke-linejoin="round" stroke-linecap="round"
-      points="${{serie[n].map((v, i) => `${{x(i).toFixed(1)}},${{y(v).toFixed(1)}}`).join(' ')}}">
-      <title>${{esc(n)}}: ${{serie[n][dias.length - 1]}} pals</title></polyline>`).join('');
+      points="${{serie[n].map((v, i) => `${{x(i).toFixed(1)}},${{y(v).toFixed(1)}}`).join(' ')}}"/>`).join('');
+
+  // Faixas invisiveis por dia: dao um alvo de mouse largo o suficiente, que a
+  // linha sozinha (2.5px) nao daria.
+  const fatias = dias.map((d, i) => {{
+    const larg = W / dias.length;
+    const det = donos.map(n => ({{ n, v: serie[n][i] }}))
+      .sort((a, b) => b.v - a.v)
+      .map(o => `<span style='color:${{corDe(o.n)}}'>■</span> ${{esc(o.n)}}: <b>${{o.v}}</b>`)
+      .join('<br>');
+    return `<rect x="${{(i * larg).toFixed(1)}}" y="-6" width="${{larg.toFixed(1)}}" height="${{H + 12}}"
+      fill="transparent" data-tip="<b>${{d.split('-').reverse().slice(0,2).join('/')}}</b><br>${{det}}"/>`;
+  }}).join('');
+
+  const meio = dias[Math.floor(dias.length / 2)];
+  const rotulo = s => s.split('-').reverse().slice(0, 2).join('/');
 
   $('corrida').innerHTML = `
     <svg viewBox="0 -6 ${{W}} ${{H + 12}}" preserveAspectRatio="none"
          style="width:100%;height:170px" role="img"
-         aria-label="Pals acumulados por jogador ao longo do tempo">${{linhas}}</svg>
+         aria-label="Pals acumulados por jogador ao longo do tempo">${{linhas}}${{fatias}}</svg>
+    <div class="eixo"><span>${{rotulo(dias[0])}}</span><span>${{rotulo(meio)}}</span>
+      <span>${{rotulo(dias[dias.length - 1])}}</span></div>
     <div class="legenda">${{donos.map(n =>
       `<span class="leg"><i style="background:${{corDe(n)}}"></i>${{esc(n)}}
-       <b style="color:var(--tx)">${{serie[n][dias.length - 1]}}</b></span>`).join('')}}</div>
-    <div class="dim" style="margin-top:4px">${{dias[0].split('-').reverse().slice(0,2).join('/')}}
-      até ${{dias[dias.length-1].split('-').reverse().slice(0,2).join('/')}}</div>`;
+       <b style="color:var(--tx)">${{serie[n][dias.length - 1]}}</b></span>`).join('')}}</div>`;
 }})();
 
 // ---- trofeus ----

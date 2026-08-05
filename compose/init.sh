@@ -20,8 +20,12 @@ API_PORT=8212
 
 PULL_ATTEMPTS=3
 MAX_RESTORE_ATTEMPTS=5
-STARTUP_TIMEOUT=180
 KEEP_SNAPSHOTS=10
+
+# Subida normal leva ~7s. Depois de uma atualizacao o primeiro boot pode
+# migrar dados e demorar bem mais, entao o prazo dobra nesse caso.
+STARTUP_TIMEOUT=180
+STARTUP_TIMEOUT_UPDATE=600
 
 # Rodando às 5:00, o prazo de 6h leva o reinício forçado às 11:00; a contagem
 # regressiva começa 10 min antes disso.
@@ -466,7 +470,9 @@ server_healthy() {
 
 # 0 = subiu, 1 = save corrompido, 2 = falhou por outro motivo
 wait_for_server() {
-  local deadline=$((SECONDS + STARTUP_TIMEOUT)) logs
+  local limite="$STARTUP_TIMEOUT"
+  [ -n "$UPDATE_TAG" ] && limite="$STARTUP_TIMEOUT_UPDATE"
+  local deadline=$((SECONDS + limite)) logs
   while [ $SECONDS -lt $deadline ]; do
     logs="$(docker compose -f "$COMPOSE_FILE" logs --no-color 2>/dev/null || true)"
 
@@ -516,7 +522,9 @@ start_server() {
         attempt=$((attempt + 1))
         ;;
       *)
-        err "Servidor não subiu dentro de ${STARTUP_TIMEOUT}s. Últimas linhas:"
+        local limite="$STARTUP_TIMEOUT"
+        [ -n "$UPDATE_TAG" ] && limite="$STARTUP_TIMEOUT_UPDATE"
+        err "Servidor não subiu dentro de ${limite}s. Últimas linhas:"
         docker compose -f "$COMPOSE_FILE" logs --no-color --tail 30
         return 1
         ;;

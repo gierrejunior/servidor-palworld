@@ -51,12 +51,25 @@
   .tempo { display:flex; align-items:flex-end; gap:3px; height:170px; }
   .dia { flex:1; display:flex; flex-direction:column; justify-content:flex-end;
     align-items:center; gap:6px; height:100%; min-width:0; }
+  /* tooltip proprio: o title nativo demora ~1s e nao aceita formatacao */
+  .tip { position:fixed; z-index:50; pointer-events:none; opacity:0;
+    transition:opacity .12s; background:var(--card); color:var(--tx);
+    border:1px solid var(--line); border-radius:9px; padding:8px 11px;
+    font-size:.82rem; line-height:1.5; box-shadow:0 6px 24px rgba(0,0,0,.35);
+    max-width:260px; }
+  .tip.on { opacity:1; }
+  .dia:focus, .hora:focus { outline:2px solid var(--ac); outline-offset:2px;
+    border-radius:4px; }
+  .dia:hover .pilha, .hora:hover .pilha { filter:brightness(1.25); }
+
   .pilha { width:100%; display:flex; flex-direction:column-reverse;
     justify-content:flex-start; flex:1; min-height:0; }
   .pilha i { width:100%; min-height:2px; display:block; }
   .pilha i:last-child { border-radius:3px 3px 0 0; }
   .dia span { font-size:.6rem; color:var(--dim); white-space:nowrap;
     transform:rotate(-45deg); }
+  .eixo { display:flex; justify-content:space-between; margin-top:6px;
+    font-size:.7rem; color:var(--dim); }
   .legenda { display:flex; flex-wrap:wrap; gap:12px; margin-top:26px;
     font-size:.82rem; color:var(--dim); }
   .leg { display:inline-flex; align-items:center; gap:6px; }
@@ -247,7 +260,7 @@
 
   <h2>Capturas por dia <span class="dim">— por jogador</span></h2>
   <div class="card">
-    <div class="tempo"><div class="dia" title="24/07 — 12 capturas (DANDANDANDAN: 12)"><div class="pilha"><i style="height:4.3%;background:#ffc857"></i></div><span>24/07</span></div><div class="dia" title="25/07 — 90 capturas (DANDANDANDAN: 60 · XIBREGA: 30)"><div class="pilha"><i style="height:21.5%;background:#ffc857"></i><i style="height:10.8%;background:#b18cff"></i></div><span>25/07</span></div><div class="dia" title="26/07 — 279 capturas (GLink: 116 · eRicFerna: 82 · Dvd: 40 · DANDANDANDAN: 28 · XIBREGA: 13)"><div class="pilha"><i style="height:41.6%;background:#ff7ab8"></i><i style="height:29.4%;background:#5ddba0"></i><i style="height:14.3%;background:#4ea1ff"></i><i style="height:10.0%;background:#ffc857"></i><i style="height:4.7%;background:#b18cff"></i></div><span>26/07</span></div><div class="dia" title="27/07 — 94 capturas (Dvd: 49 · eRicFerna: 45)"><div class="pilha"><i style="height:17.6%;background:#4ea1ff"></i><i style="height:16.1%;background:#5ddba0"></i></div><span>27/07</span></div><div class="dia" title="28/07 — 36 capturas (Dvd: 36)"><div class="pilha"><i style="height:12.9%;background:#4ea1ff"></i></div><span>28/07</span></div><div class="dia" title="29/07 — 1 capturas (Dvd: 1)"><div class="pilha"><i style="height:0.4%;background:#4ea1ff"></i></div><span>29/07</span></div><div class="dia" title="30/07 — 136 capturas (GLink: 107 · Dvd: 29)"><div class="pilha"><i style="height:38.4%;background:#ff7ab8"></i><i style="height:10.4%;background:#4ea1ff"></i></div><span>30/07</span></div><div class="dia" title="01/08 — 46 capturas (Dvd: 22 · GLink: 10 · XIBREGA: 8 · DANDANDANDAN: 6)"><div class="pilha"><i style="height:7.9%;background:#4ea1ff"></i><i style="height:3.6%;background:#ff7ab8"></i><i style="height:2.9%;background:#b18cff"></i><i style="height:2.2%;background:#ffc857"></i></div><span>01/08</span></div><div class="dia" title="02/08 — 26 capturas (Dvd: 18 · DANDANDANDAN: 7 · XIBREGA: 1)"><div class="pilha"><i style="height:6.5%;background:#4ea1ff"></i><i style="height:2.5%;background:#ffc857"></i><i style="height:0.4%;background:#b18cff"></i></div><span>02/08</span></div><div class="dia" title="03/08 — 55 capturas (Dvd: 55)"><div class="pilha"><i style="height:19.7%;background:#4ea1ff"></i></div><span>03/08</span></div><div class="dia" title="04/08 — 16 capturas (GLink: 8 · Dvd: 5 · DANDANDANDAN: 3)"><div class="pilha"><i style="height:2.9%;background:#ff7ab8"></i><i style="height:1.8%;background:#4ea1ff"></i><i style="height:1.1%;background:#ffc857"></i></div><span>04/08</span></div><div class="dia" title="05/08 — 93 capturas (DANDANDANDAN: 68 · Dvd: 25)"><div class="pilha"><i style="height:24.4%;background:#ffc857"></i><i style="height:9.0%;background:#4ea1ff"></i></div><span>05/08</span></div></div>
+    <div class="tempo"><div class="dia" tabindex="0" role="img" aria-label="24/07: 12 capturas" data-tip="<b>24/07</b> — 12 capturas<br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>12</b>"><div class="pilha"><i style="height:4.3%;background:#ffc857"></i></div><span>24/07</span></div><div class="dia" tabindex="0" role="img" aria-label="25/07: 90 capturas" data-tip="<b>25/07</b> — 90 capturas<br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>60</b><br><span style='color:#b18cff'>■</span> XIBREGA: <b>30</b>"><div class="pilha"><i style="height:21.5%;background:#ffc857"></i><i style="height:10.8%;background:#b18cff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="26/07: 279 capturas" data-tip="<b>26/07</b> — 279 capturas<br><span style='color:#ff7ab8'>■</span> GLink: <b>116</b><br><span style='color:#5ddba0'>■</span> eRicFerna: <b>82</b><br><span style='color:#4ea1ff'>■</span> Dvd: <b>40</b><br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>28</b><br><span style='color:#b18cff'>■</span> XIBREGA: <b>13</b>"><div class="pilha"><i style="height:41.6%;background:#ff7ab8"></i><i style="height:29.4%;background:#5ddba0"></i><i style="height:14.3%;background:#4ea1ff"></i><i style="height:10.0%;background:#ffc857"></i><i style="height:4.7%;background:#b18cff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="27/07: 94 capturas" data-tip="<b>27/07</b> — 94 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>49</b><br><span style='color:#5ddba0'>■</span> eRicFerna: <b>45</b>"><div class="pilha"><i style="height:17.6%;background:#4ea1ff"></i><i style="height:16.1%;background:#5ddba0"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="28/07: 36 capturas" data-tip="<b>28/07</b> — 36 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>36</b>"><div class="pilha"><i style="height:12.9%;background:#4ea1ff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="29/07: 1 capturas" data-tip="<b>29/07</b> — 1 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>1</b>"><div class="pilha"><i style="height:0.4%;background:#4ea1ff"></i></div><span>29/07</span></div><div class="dia" tabindex="0" role="img" aria-label="30/07: 136 capturas" data-tip="<b>30/07</b> — 136 capturas<br><span style='color:#ff7ab8'>■</span> GLink: <b>107</b><br><span style='color:#4ea1ff'>■</span> Dvd: <b>29</b>"><div class="pilha"><i style="height:38.4%;background:#ff7ab8"></i><i style="height:10.4%;background:#4ea1ff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="01/08: 46 capturas" data-tip="<b>01/08</b> — 46 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>22</b><br><span style='color:#ff7ab8'>■</span> GLink: <b>10</b><br><span style='color:#b18cff'>■</span> XIBREGA: <b>8</b><br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>6</b>"><div class="pilha"><i style="height:7.9%;background:#4ea1ff"></i><i style="height:3.6%;background:#ff7ab8"></i><i style="height:2.9%;background:#b18cff"></i><i style="height:2.2%;background:#ffc857"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="02/08: 26 capturas" data-tip="<b>02/08</b> — 26 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>18</b><br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>7</b><br><span style='color:#b18cff'>■</span> XIBREGA: <b>1</b>"><div class="pilha"><i style="height:6.5%;background:#4ea1ff"></i><i style="height:2.5%;background:#ffc857"></i><i style="height:0.4%;background:#b18cff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="03/08: 55 capturas" data-tip="<b>03/08</b> — 55 capturas<br><span style='color:#4ea1ff'>■</span> Dvd: <b>55</b>"><div class="pilha"><i style="height:19.7%;background:#4ea1ff"></i></div><span></span></div><div class="dia" tabindex="0" role="img" aria-label="04/08: 16 capturas" data-tip="<b>04/08</b> — 16 capturas<br><span style='color:#ff7ab8'>■</span> GLink: <b>8</b><br><span style='color:#4ea1ff'>■</span> Dvd: <b>5</b><br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>3</b>"><div class="pilha"><i style="height:2.9%;background:#ff7ab8"></i><i style="height:1.8%;background:#4ea1ff"></i><i style="height:1.1%;background:#ffc857"></i></div><span>04/08</span></div><div class="dia" tabindex="0" role="img" aria-label="05/08: 93 capturas" data-tip="<b>05/08</b> — 93 capturas<br><span style='color:#ffc857'>■</span> DANDANDANDAN: <b>68</b><br><span style='color:#4ea1ff'>■</span> Dvd: <b>25</b>"><div class="pilha"><i style="height:24.4%;background:#ffc857"></i><i style="height:9.0%;background:#4ea1ff"></i></div><span>05/08</span></div></div>
     <div class="legenda"><span class="leg"><i style="background:#4ea1ff"></i>Dvd</span><span class="leg"><i style="background:#ffc857"></i>DANDANDANDAN</span><span class="leg"><i style="background:#ff7ab8"></i>GLink</span><span class="leg"><i style="background:#5ddba0"></i>eRicFerna</span><span class="leg"><i style="background:#b18cff"></i>XIBREGA</span></div>
   </div>
 
@@ -329,6 +342,37 @@ const busca = $('busca'), fDono = $('dono'), fTipo = $('tipo'), fOrdem = $('orde
 const mediaIv = p => (p.iv[0] + p.iv[1] + p.iv[2]) / 3;
 const CORES = {"Dvd": "#4ea1ff", "DANDANDANDAN": "#ffc857", "GLink": "#ff7ab8", "eRicFerna": "#5ddba0", "XIBREGA": "#b18cff", "selvagem": "#6b7684"};
 const corDe = n => CORES[n] || '#6b7684';
+
+// ---- tooltip dos graficos ----
+// Um unico elemento reaproveitado por todas as barras: delegacao de evento em
+// vez de um listener por coluna. Segue o mouse e tambem responde ao teclado.
+const tip = Object.assign(document.createElement('div'), { className: 'tip' });
+document.body.appendChild(tip);
+
+function mostrarTip(alvo, x, y) {
+  tip.innerHTML = alvo.dataset.tip;
+  tip.classList.add('on');
+  const r = tip.getBoundingClientRect();
+  // Vira o lado quando encostaria na borda da janela.
+  const px = Math.min(Math.max(8, x + 14), innerWidth - r.width - 8);
+  const py = y - r.height - 14 < 8 ? y + 20 : y - r.height - 14;
+  tip.style.left = px + 'px';
+  tip.style.top = py + 'px';
+}
+const esconderTip = () => tip.classList.remove('on');
+
+document.addEventListener('mousemove', e => {
+  const alvo = e.target.closest('[data-tip]');
+  if (alvo) mostrarTip(alvo, e.clientX, e.clientY); else esconderTip();
+});
+document.addEventListener('focusin', e => {
+  const alvo = e.target.closest('[data-tip]');
+  if (!alvo) return esconderTip();
+  const r = alvo.getBoundingClientRect();
+  mostrarTip(alvo, r.left + r.width / 2, r.top);
+});
+document.addEventListener('focusout', esconderTip);
+addEventListener('scroll', esconderTip, { passive: true });
 
 // ---- explorador com rolagem infinita ----
 // Os filtros sempre percorrem D.pals inteiro; a rolagem so controla quanto ja
@@ -413,12 +457,17 @@ filtrar();
   const pico = Math.max(...Array.from({length: 24}, (_, h) => totalHora(h)), 1);
 
   $('horas').innerHTML = Array.from({length: 24}, (_, h) => {
-    const det = donos.filter(n => porHora[n][h]).map(n => `${esc(n)}: ${porHora[n][h]}`).join(' · ');
-    const segs = donos.filter(n => porHora[n][h]).map(n =>
+    const ativos = donos.filter(n => porHora[n][h]).sort((a, b) => porHora[b][h] - porHora[a][h]);
+    const det = ativos.map(n =>
+      `<span style='color:${corDe(n)}'>■</span> ${esc(n)}: <b>${porHora[n][h]}</b>`).join('<br>');
+    const segs = ativos.map(n =>
       `<i style="height:${porHora[n][h] / pico * 100}%;background:${corDe(n)}"></i>`).join('');
-    return `<div class="hora" title="${String(h).padStart(2,'0')}h — ${totalHora(h)} capturas${det ? ' (' + det + ')' : ''}">
+    const hh = String(h).padStart(2, '0');
+    return `<div class="hora" tabindex="0" role="img"
+        aria-label="${hh} horas: ${totalHora(h)} capturas"
+        data-tip="<b>${hh}h às ${String((h+1)%24).padStart(2,'0')}h</b> — ${totalHora(h)} capturas${det ? '<br>' + det : ''}">
       <div class="pilha">${segs}</div>
-      <span>${h % 3 === 0 ? String(h).padStart(2,'0') : ''}</span></div>`;
+      <span>${h % 6 === 0 ? hh + 'h' : ''}</span></div>`;
   }).join('');
 
   $('leg-horas').innerHTML = donos.map(n =>
@@ -445,18 +494,32 @@ filtrar();
   const linhas = donos.map(n =>
     `<polyline fill="none" stroke="${corDe(n)}" stroke-width="2.5"
       stroke-linejoin="round" stroke-linecap="round"
-      points="${serie[n].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}">
-      <title>${esc(n)}: ${serie[n][dias.length - 1]} pals</title></polyline>`).join('');
+      points="${serie[n].map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`).join('');
+
+  // Faixas invisiveis por dia: dao um alvo de mouse largo o suficiente, que a
+  // linha sozinha (2.5px) nao daria.
+  const fatias = dias.map((d, i) => {
+    const larg = W / dias.length;
+    const det = donos.map(n => ({ n, v: serie[n][i] }))
+      .sort((a, b) => b.v - a.v)
+      .map(o => `<span style='color:${corDe(o.n)}'>■</span> ${esc(o.n)}: <b>${o.v}</b>`)
+      .join('<br>');
+    return `<rect x="${(i * larg).toFixed(1)}" y="-6" width="${larg.toFixed(1)}" height="${H + 12}"
+      fill="transparent" data-tip="<b>${d.split('-').reverse().slice(0,2).join('/')}</b><br>${det}"/>`;
+  }).join('');
+
+  const meio = dias[Math.floor(dias.length / 2)];
+  const rotulo = s => s.split('-').reverse().slice(0, 2).join('/');
 
   $('corrida').innerHTML = `
     <svg viewBox="0 -6 ${W} ${H + 12}" preserveAspectRatio="none"
          style="width:100%;height:170px" role="img"
-         aria-label="Pals acumulados por jogador ao longo do tempo">${linhas}</svg>
+         aria-label="Pals acumulados por jogador ao longo do tempo">${linhas}${fatias}</svg>
+    <div class="eixo"><span>${rotulo(dias[0])}</span><span>${rotulo(meio)}</span>
+      <span>${rotulo(dias[dias.length - 1])}</span></div>
     <div class="legenda">${donos.map(n =>
       `<span class="leg"><i style="background:${corDe(n)}"></i>${esc(n)}
-       <b style="color:var(--tx)">${serie[n][dias.length - 1]}</b></span>`).join('')}</div>
-    <div class="dim" style="margin-top:4px">${dias[0].split('-').reverse().slice(0,2).join('/')}
-      até ${dias[dias.length-1].split('-').reverse().slice(0,2).join('/')}</div>`;
+       <b style="color:var(--tx)">${serie[n][dias.length - 1]}</b></span>`).join('')}</div>`;
 })();
 
 // ---- trofeus ----
