@@ -248,6 +248,27 @@ HTML = f"""<!doctype html>
   /* Foco: o que nao e do jogador escolhido desbota, sem sumir do grafico. */
   [data-j] {{ transition:opacity .18s; }}
   .dica-foco {{ font-size:.75rem; color:var(--dim); margin-top:8px; }}
+  .periodos {{ display:flex; gap:6px; margin-bottom:14px; }}
+  .periodos button {{ background:var(--bg); border:1px solid var(--line);
+    color:var(--dim); border-radius:99px; padding:5px 13px; font:inherit;
+    font-size:.8rem; cursor:pointer; }}
+  .periodos button:hover {{ color:var(--tx); }}
+  .periodos button.on {{ border-color:var(--ac); color:var(--ac); }}
+  .dia {{ cursor:pointer; }}
+  .dia.sel .pilha {{ outline:2px solid var(--ac); outline-offset:1px;
+    border-radius:3px; }}
+  /* comparacao */
+  .cmp {{ display:grid; grid-template-columns:1fr auto 1fr; gap:10px;
+    align-items:center; }}
+  .cmp .rot {{ text-align:center; color:var(--dim); font-size:.75rem;
+    white-space:nowrap; }}
+  .cmp .v {{ font-size:.95rem; padding:6px 10px; border-radius:8px;
+    background:var(--bg); }}
+  .cmp .v.dir {{ text-align:right; }}
+  .cmp .v.venc {{ color:var(--ac); font-weight:650; }}
+  .cmp-nome {{ font-weight:650; font-size:1.05rem; display:flex;
+    align-items:center; gap:7px; }}
+  .cmp-nome i {{ width:11px; height:11px; border-radius:3px; }}
   .linha {{ display:grid; grid-template-columns:150px 1fr 40px; gap:10px;
     align-items:center; margin-bottom:7px; }}
   .rot {{ font-size:.88rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
@@ -369,16 +390,31 @@ HTML = f"""<!doctype html>
     </table>
   </div>
 
-  <h2>Capturas por dia <span class="dim">— por jogador</span></h2>
+  <h2>Comparar jogadores</h2>
   <div class="card">
+    <div class="ferramentas">
+      <select id="cmpA" aria-label="Primeiro jogador"></select>
+      <span class="dim" style="align-self:center">x</span>
+      <select id="cmpB" aria-label="Segundo jogador"></select>
+    </div>
+    <div id="comparacao"></div>
+  </div>
+
+  <h2>Capturas por dia <span class="dim">— clique num dia para ver os pals</span></h2>
+  <div class="card">
+    <div class="periodos" role="group" aria-label="Período dos gráficos">
+      <button data-periodo="7">7 dias</button>
+      <button data-periodo="30" class="on">30 dias</button>
+      <button data-periodo="0">Tudo</button>
+    </div>
     <div class="grafico">
-      {eixo_y_tempo}
+      <div class="eixo-y" id="eixo-tempo"></div>
       <div class="area">
         <div class="grade"><i style="top:0"></i><i style="top:50%"></i><i style="top:100%"></i></div>
-        <div class="tempo">{barras_tempo}</div>
+        <div class="tempo" id="tempo"></div>
       </div>
     </div>
-    <div class="legenda">{legenda}</div>
+    <div class="legenda" id="leg-tempo"></div>
   </div>
 
   <div class="dois">
@@ -468,6 +504,22 @@ const mediaIv = p => (p.iv[0] + p.iv[1] + p.iv[2]) / 3;
 const CORES = {CORES_JS};
 const corDe = n => CORES[n] || '#6b7684';
 
+// Estado e utilitarios ficam aqui em cima de proposito: `filtrar()` roda logo
+// que e definida, e `let` mais abaixo no arquivo daria erro de acesso antes da
+// inicializacao - o script morreria em silencio no meio.
+const DONOS = [...new Set(D.pals.map(p => p.d).filter(Boolean))];
+let PERIODO = 30;   // dias exibidos nos graficos; 0 = tudo
+let FOCO = null;    // jogador isolado
+let DIA_SEL = '';   // dia escolhido no grafico de capturas
+
+const diasComCaptura = () => [...new Set(D.pals.filter(p => p.c).map(p => p.c))].sort();
+const diasDoPeriodo = () => {{
+  const todos = diasComCaptura();
+  return PERIODO ? todos.slice(-PERIODO) : todos;
+}};
+const fmtDia = d => d.split('-').reverse().slice(0, 2).join('/');
+const barraPct = (v, max) => (max ? (v / max * 100).toFixed(1) : 0);
+
 // ---- tooltip dos graficos ----
 // Um unico elemento reaproveitado por todas as barras: delegacao de evento em
 // vez de um listener por coluna. Segue o mouse e tambem responde ao teclado.
@@ -529,9 +581,10 @@ function desenharLote() {{
   $('lista').insertAdjacentHTML('beforeend',
     filtrados.slice(desenhados, ate).map(linhaHtml).join(''));
   desenhados = ate;
-  $('contagem').textContent = filtrados.length === D.pals.length
+  const contexto = DIA_SEL ? ` · capturados em ${{fmtDia(DIA_SEL)}}` : '';
+  $('contagem').textContent = (filtrados.length === D.pals.length
     ? `${{D.pals.length}} pals · mostrando ${{desenhados}}`
-    : `${{filtrados.length}} de ${{D.pals.length}} pals · mostrando ${{desenhados}}`;
+    : `${{filtrados.length}} de ${{D.pals.length}} pals · mostrando ${{desenhados}}`) + contexto;
 }}
 
 function filtrar() {{
@@ -541,6 +594,7 @@ function filtrar() {{
   filtrados = D.pals.filter(p =>
     (!q || p.e.toLowerCase().includes(q)) &&
     (!dono || p.d === dono) &&
+    (!DIA_SEL || p.c === DIA_SEL) &&
     (!tipo || (tipo === 'l' && p.l) || (tipo === 'a' && p.a) || (tipo === 'r' && p.r >= 4))
   );
 
@@ -571,12 +625,48 @@ new IntersectionObserver(e => {{ if (e[0].isIntersecting) desenharLote(); }},
 
 filtrar();
 
-// ---- perfil de atividade por hora ----
-(() => {{
-  const donos = [...new Set(D.pals.map(p => p.d).filter(Boolean))];
+// ---- graficos ----
+// Desenhados aqui, e nao no gerador, para responderem a periodo e foco sem
+// precisar de uma nova publicacao.
+function desenharCapturas() {{
+  const dias = diasDoPeriodo();
+  const porDia = {{}};
+  dias.forEach(d => porDia[d] = {{}});
+  D.pals.forEach(p => {{
+    if (!p.c || !p.d || !(p.c in porDia)) return;
+    porDia[p.c][p.d] = (porDia[p.c][p.d] || 0) + 1;
+  }});
+
+  const totais = dias.map(d => Object.values(porDia[d]).reduce((a, b) => a + b, 0));
+  const pico = Math.max(...totais, 1);
+
+  $('eixo-tempo').innerHTML =
+    [pico, Math.round(pico / 2), 0].map(v => `<span>${{v}}</span>`).join('');
+
+  $('tempo').innerHTML = dias.map((d, i) => {{
+    const partes = Object.entries(porDia[d]).sort((a, b) => b[1] - a[1]);
+    const segs = partes.map(([n, q]) =>
+      `<i data-j="${{esc(n)}}" style="height:${{barraPct(q, pico)}}%;background:${{corDe(n)}}"></i>`).join('');
+    const det = partes.map(([n, q]) =>
+      `<span style='color:${{corDe(n)}}'>■</span> ${{esc(n)}}: <b>${{q}}</b>`).join('<br>');
+    return `<div class="dia${{DIA_SEL === d ? ' sel' : ''}}" data-dia="${{d}}" tabindex="0" role="button"
+        aria-label="${{fmtDia(d)}}: ${{totais[i]}} capturas"
+        data-tip="<b>${{fmtDia(d)}}</b> — ${{totais[i]}} capturas${{det ? '<br>' + det : ''}}<br><span class='dim'>clique para ver os pals</span>">
+      <div class="pilha">${{segs}}</div><span>${{fmtDia(d)}}</span></div>`;
+  }}).join('');
+
+  const presentes = DONOS.filter(n => dias.some(d => porDia[d][n]));
+  $('leg-tempo').innerHTML = presentes.map(n =>
+    `<button class="leg" data-jogador="${{esc(n)}}" title="Clique para isolar ${{esc(n)}}">
+      <i style="background:${{corDe(n)}}"></i>${{esc(n)}}</button>`).join('');
+}}
+
+function desenharHoras() {{
+  const dias = new Set(diasDoPeriodo());
+  const donos = DONOS;
   const porHora = {{}};
   donos.forEach(n => porHora[n] = new Array(24).fill(0));
-  D.pals.forEach(p => {{ if (p.d && p.h >= 0) porHora[p.d][p.h]++; }});
+  D.pals.forEach(p => {{ if (p.d && p.h >= 0 && dias.has(p.c)) porHora[p.d][p.h]++; }});
 
   const totalHora = h => donos.reduce((s, n) => s + porHora[n][h], 0);
   const pico = Math.max(...Array.from({{length: 24}}, (_, h) => totalHora(h)), 1);
@@ -598,20 +688,23 @@ filtrar();
   $('eixo-horas').innerHTML =
     [pico, Math.round(pico / 2), 0].map(v => `<span>${{v}}</span>`).join('');
 
-  $('leg-horas').innerHTML = donos.map(n =>
+  $('leg-horas').innerHTML = donos.filter(n => porHora[n].some(v => v)).map(n =>
     `<button class="leg" data-jogador="${{esc(n)}}" title="Clique para isolar ${{esc(n)}}">
       <i style="background:${{corDe(n)}}"></i>${{esc(n)}}</button>`).join('');
-}})();
+}}
 
 // ---- corrida da colecao (acumulado) ----
-(() => {{
-  const donos = [...new Set(D.pals.map(p => p.d).filter(Boolean))];
-  const dias = [...new Set(D.pals.filter(p => p.c).map(p => p.c))].sort();
+function desenharCorrida() {{
+  const donos = DONOS;
+  const dias = diasDoPeriodo();
   if (!dias.length) return;
 
+  // Comeca do que a pessoa ja tinha antes da janela, para a curva nao "zerar"
+  // quando o periodo e curto.
   const serie = {{}};
+  const inicio = dias[0];
   donos.forEach(n => {{
-    let acc = 0;
+    let acc = D.pals.filter(p => p.d === n && p.c && p.c < inicio).length;
     serie[n] = dias.map(d => acc += D.pals.filter(p => p.d === n && p.c === d).length);
   }});
   const teto = Math.max(...donos.map(n => serie[n][dias.length - 1]), 1);
@@ -660,12 +753,17 @@ filtrar();
       `<button class="leg" data-jogador="${{esc(n)}}" title="Clique para isolar ${{esc(n)}}">
         <i style="background:${{corDe(n)}}"></i>${{esc(n)}}
         <b style="color:var(--tx)">${{serie[n][dias.length - 1]}}</b></button>`).join('')}}</div>
-    <div class="dica-foco">Clique num jogador da legenda para isolá-lo em todos os gráficos.</div>`;
-}})();
+    <div class="dica-foco">Clique num jogador da legenda para isolá-lo nos gráficos e na lista de pals.</div>`;
+}}
+
+function desenharGraficos() {{
+  desenharCapturas();
+  desenharHoras();
+  desenharCorrida();
+  aplicarFoco();
+}}
 
 // ---- foco por jogador, compartilhado pelos tres graficos ----
-let FOCO = null;
-
 function aplicarFoco() {{
   document.querySelectorAll('[data-j]').forEach(el => {{
     const meu = !FOCO || el.dataset.j === FOCO;
@@ -681,15 +779,99 @@ function aplicarFoco() {{
 function alternarFoco(nome) {{
   FOCO = FOCO === nome ? null : nome;
   aplicarFoco();
+  // O foco tambem manda na lista de pals; sem isso a pagina ficaria dizendo
+  // duas coisas diferentes ao mesmo tempo.
+  fDono.value = FOCO || '';
+  filtrar();
 }}
 
-// Delegacao: a legenda das horas e da corrida so existe depois do script rodar.
+// Delegacao: as legendas so existem depois de os graficos serem desenhados.
 document.addEventListener('click', e => {{
   const leg = e.target.closest('.leg[data-jogador]');
   if (leg) {{ alternarFoco(leg.dataset.jogador); return; }}
+
   const linha = e.target.closest('polyline[data-j]');
-  if (linha) alternarFoco(linha.dataset.j);
+  if (linha) {{ alternarFoco(linha.dataset.j); return; }}
+
+  const per = e.target.closest('.periodos button');
+  if (per) {{
+    PERIODO = Number(per.dataset.periodo);
+    document.querySelectorAll('.periodos button').forEach(b =>
+      b.classList.toggle('on', b === per));
+    DIA_SEL = '';
+    desenharGraficos();
+    return;
+  }}
+
+  const dia = e.target.closest('.dia[data-dia]');
+  if (dia) {{
+    DIA_SEL = DIA_SEL === dia.dataset.dia ? '' : dia.dataset.dia;
+    desenharCapturas();
+    aplicarFoco();
+    filtrar();
+    if (DIA_SEL) $('explorador').scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+  }}
 }});
+
+document.addEventListener('keydown', e => {{
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const dia = e.target.closest('.dia[data-dia]');
+  if (!dia) return;
+  e.preventDefault();
+  dia.click();
+}});
+
+desenharGraficos();
+
+// ---- comparacao entre dois jogadores ----
+(() => {{
+  const metricas = [
+    ['nível', j => j.nivel],
+    ['experiência', j => j.exp, v => v.toLocaleString('pt-BR')],
+    ['pals', j => j.pals],
+    ['espécies', (j, ps) => new Set(ps.map(p => p.e)).size],
+    ['alphas', j => j.alphas],
+    ['lucky', j => j.lucky],
+    ['rank 4+', (j, ps) => ps.filter(p => p.r >= 4).length],
+    ['nível médio dos pals', j => j.nivel_medio_pals],
+    ['IV médio', (j, ps) => ps.length ? +(ps.reduce((s, p) => s + mediaIv(p), 0) / ps.length).toFixed(1) : 0],
+    ['melhor IV', (j, ps) => ps.length ? +Math.max(...ps.map(mediaIv)).toFixed(1) : 0],
+  ];
+
+  const opcoes = D.jogadores.map(j =>
+    `<option value="${{esc(j.nome)}}">${{esc(j.nome)}}</option>`).join('');
+  $('cmpA').innerHTML = opcoes;
+  $('cmpB').innerHTML = opcoes;
+  if (D.jogadores[1]) $('cmpB').value = D.jogadores[1].nome;
+
+  function comparar() {{
+    const a = D.jogadores.find(j => j.nome === $('cmpA').value);
+    const b = D.jogadores.find(j => j.nome === $('cmpB').value);
+    if (!a || !b) return;
+    const pa = D.pals.filter(p => p.d === a.nome);
+    const pb = D.pals.filter(p => p.d === b.nome);
+
+    const linhas = metricas.map(([rot, fn, fmt]) => {{
+      const va = fn(a, pa), vb = fn(b, pb);
+      const f = fmt || (v => v);
+      return `<div class="v dir ${{va > vb ? 'venc' : ''}}">${{f(va)}}</div>
+              <div class="rot">${{rot}}</div>
+              <div class="v ${{vb > va ? 'venc' : ''}}">${{f(vb)}}</div>`;
+    }}).join('');
+
+    $('comparacao').innerHTML = `<div class="cmp">
+      <div class="cmp-nome" style="justify-content:flex-end">
+        ${{esc(a.nome)}}<i style="background:${{corDe(a.nome)}}"></i></div>
+      <div></div>
+      <div class="cmp-nome"><i style="background:${{corDe(b.nome)}}"></i>${{esc(b.nome)}}</div>
+      ${{linhas}}
+    </div>`;
+  }}
+
+  $('cmpA').addEventListener('change', comparar);
+  $('cmpB').addEventListener('change', comparar);
+  comparar();
+}})();
 
 // ---- trofeus ----
 // Titulos calculados na hora a partir da colecao de cada um. So entra quem
