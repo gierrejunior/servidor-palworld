@@ -247,13 +247,96 @@ Ainda assim, avise seus jogadores antes de tornar a página pública.
 
 ### O que o dashboard mostra
 
-Ranking, troféus calculados na hora (Colecionador, Caçador de Alphas, Coruja,
-Maratonista…), capturas por dia empilhadas por jogador, atividade por hora,
-corrida da coleção, espécies exclusivas, hall de IVs e um explorador com busca,
-filtros e rolagem infinita sobre todos os pals.
+| Seção | O que traz | Interação |
+|---|---|---|
+| **Faixa ao vivo** | Quem está online agora, nível e ping | Clique no nome abre o perfil |
+| **Troféus** | 12 títulos calculados na hora a partir da coleção | Clique abre o perfil do ganhador |
+| **Ranking** | Nível, experiência, pals, alphas, lucky, melhor pal | Clique abre o perfil e filtra a lista |
+| **Comparar** | Dois jogadores lado a lado em 10 métricas | Destaca quem ganha cada uma |
+| **Capturas por dia** | Barras empilhadas por jogador | Clique num dia lista os pals daquele dia |
+| **Quando cada um joga** | Distribuição por hora do dia | Tooltip com a divisão por jogador |
+| **Corrida da coleção** | Pals acumulados ao longo do tempo | Clique numa linha isola o jogador |
+| **Espécies exclusivas** | O que cada um tem que ninguém mais tem | — |
+| **Hall da fama** | Os 8 melhores IVs do servidor | — |
+| **Explorador** | Todos os pals, com rolagem infinita | Busca, 4 filtros e 4 ordenações |
+
+Clicar num jogador na legenda **isola ele nos três gráficos ao mesmo tempo** e
+filtra a lista de pals junto — o resto desbota em vez de sumir, para a comparação
+continuar visível. Os períodos (7 dias / 30 dias / tudo) redesenham tudo no
+navegador, sem nova publicação.
+
+Os troféus saem de combinações dos dados brutos: **Coruja** conta capturas entre
+0h e 6h, **Maratonista** procura o melhor dia isolado, **Perfeccionista** exige no
+mínimo 20 pals para não premiar quem tem três com sorte, **Geneticista** conta
+pals com IV médio acima de 85.
 
 **Tempo de jogo não existe no save** — o Palworld não registra. O que dá para
-reconstruir é a atividade a partir do horário de captura de cada pal.
+reconstruir é a atividade a partir do horário de captura de cada pal, que o
+`OwnedTime` guarda com hora cheia.
+
+### Duas velocidades: por que o dado ao vivo não vai no repositório
+
+O GitHub Pages tem um limite documentado de **10 builds por hora**. Commitar de
+minuto em minuto para mostrar quem está online deixaria o site *mais* desatualizado
+— a maioria dos builds entraria em fila — além de inflar o histórico do
+repositório sem necessidade.
+
+A saída foi separar pelo ritmo de cada dado:
+
+| Dado | Tamanho | Onde vive | Frequência |
+|---|---|---|---|
+| Coleção, IVs, troféus, gráficos | ~100 KB | GitHub Pages | 2× por dia |
+| Quem está online, ping, visto por último | ~1 KB | Gist | a cada 2 min |
+
+O Gist não dispara build nenhum, então escapa do limite. O coletor
+(`live-update.sh`) consulta apenas a REST API — não lê o save nem sobe container,
+e roda em menos de um segundo.
+
+A leitura usa `api.github.com` e não a URL `raw`. Medindo os dois: o CDN do `raw`
+serve conteúdo de até 5 minutos atrás e **ignora cache-buster**, enquanto a API
+devolve o dado fresco. Em troca, ela limita 60 requisições por hora por IP — daí o
+intervalo de 90 segundos no navegador. Como o cache dela é de 60s, consultar mais
+rápido não traria nada.
+
+O resultado honesto é **1 a 2 minutos de frescor**, não segundos. Para tempo real
+de verdade o caminho seria Cloudflare Workers + KV, que é trocar uma URL.
+
+### Estrutura dos arquivos
+
+```
+compose/palstats/
+├── Dockerfile          imagem com o ooz compilado + palworld-save-tools
+├── report.py           lê o Level.sav e emite o relatório (ou --json)
+├── gerar-dashboard.py  monta o site em docs/
+└── web/
+    ├── index.html      estrutura, só os containers vazios
+    ├── estilo.css
+    ├── app.js          tudo o que desenha, a partir de dados.json
+    └── favicon.svg
+```
+
+A primeira versão montava HTML, CSS e JavaScript dentro de f-strings do Python.
+Funcionava, mas cada chave precisava virar `{{ }}` e o editor não ajudava — dois
+bugs passaram despercebidos assim: aspas duplas aninhadas que truncavam um atributo
+e engoliam metade de um tooltip, e um `let` lido antes da declaração que deixava a
+página em branco **sem erro no console**. Em arquivos de verdade, ambos seriam
+óbvios em segundos.
+
+Hoje o `gerar-dashboard.py` não gera HTML: copia `web/` e grava o `dados.json`.
+Todo o conteúdo é desenhado no navegador, o que também deixa CSS e JS cacheáveis
+entre visitas.
+
+### Adaptando para o seu servidor
+
+O nome do servidor está no `web/index.html` e as cores dos jogadores em
+`web/app.js` (`PALETA`). O resto sai do save. Para publicar no seu GitHub Pages:
+
+```bash
+gh api -X POST repos/USUARIO/REPO/pages -f "source[branch]=main" -f "source[path]=/docs"
+```
+
+O Gist é criado sozinho na primeira execução do `live-update.sh`, que grava o id em
+`compose/gist-id`.
 
 ## Como saber se está funcionando
 
